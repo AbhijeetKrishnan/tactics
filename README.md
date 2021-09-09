@@ -10,3 +10,4 @@
    (https://stockfishchess.org/files/stockfish_14_linux_x64.zip) and move the binary named
    `stockfish_14_x64` into the `bin/` folder (create folder if necessary)
 5. Give execution permissions to the Stockfish binary using `chmod +x stockfish_14_x64`
+6. Run the Jupyter notebook

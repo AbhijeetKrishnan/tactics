@@ -2,3 +2,4 @@
 *.pgn
 data/*
 bin/*
+*.txt

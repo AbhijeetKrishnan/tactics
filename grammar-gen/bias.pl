@@ -10,6 +10,7 @@ direction(f, (in, in, in)).
 
 body_pred(make_move, 4).
 type(make_move, (Square, Square, Pos, Pos)).
+direction(make_move, (in, in, in, out)).
 
 body_pred(attacks, 3).
 type(attacks, (Square, Square, Pos)).

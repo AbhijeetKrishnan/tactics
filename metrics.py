@@ -151,12 +151,16 @@ def parse_result_to_str(parse_result):
     return f'{head_pred}:-{body_preds}'
 
 def main():
-    tactics = parse_file('hspace_15.txt')
+    tactics = parse_file('hspace.txt')
     tactics = sorted(tactics, key=lambda ele: len(ele) - 1)
+    tactics = map(parse_result_to_str, tactics)
+    # print(tactics)
+    tactics = filter(lambda ele: ele.count('make_move') > 0, tactics)
+    # print(tactics)
     for tactic in tactics:
-        tactic_text = parse_result_to_str(tactic)
-    
-        calc_metrics(tactic_text, STOCKFISH, open(LICHESS_2013), game_limit=1, pos_limit=1)
+        tactic_text = tactic
+        print(tactic_text)
+        # calc_metrics(tactic_text, STOCKFISH, open(LICHESS_2013), game_limit=1, pos_limit=1)
 
 if __name__ == '__main__':
     main()

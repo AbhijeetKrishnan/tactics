@@ -10,6 +10,7 @@ from pyswip import Prolog
 from fen_to_contents import fen_to_contents
 
 from grammar_gen import TacticGrammar
+from parser import parse_file
 
 BK_FILE = os.path.join('bk.pl')
 
@@ -21,11 +22,11 @@ def games(pgn):
     while game := chess.pgn.read_game(pgn):
         yield game
 
-async def get_evals(engine, board, suggestions):
+def get_evals(engine, board, suggestions):
     evals = []
     for move in suggestions:
         # print(move)
-        analysis = await engine.analyse(board, limit=chess.engine.Limit(depth=1), root_moves=[move])
+        analysis = engine.analyse(board, limit=chess.engine.Limit(depth=1), root_moves=[move])
         # print(analysis)
         # TODO: how to handle illegal move in suggestions?
         if 'pv' in analysis: 
@@ -55,8 +56,8 @@ def evaluate_avg(evaluated_suggestions, top_moves):
         total += abs(top_eval - eval)
     return total / len(top_moves)
 
-async def get_top_n_moves(engine, n, board):
-    analysis = await engine.analyse(board, limit=chess.engine.Limit(depth=1), multipv=n)
+def get_top_n_moves(engine, n, board):
+    analysis = engine.analyse(board, limit=chess.engine.Limit(depth=1), multipv=n)
     # print(analysis)
     top_n_moves = [(root['score'].relative, root['pv'][0]) for root in analysis]
     return top_n_moves[:n]
@@ -87,9 +88,9 @@ def tactic(text, position: List, limit=3):
 def tactic_filter(tactic_text) -> bool:
     pass
 
-async def calc_metrics(tactic_text, engine_path, positions, game_limit=10, pos_limit=10):
+def calc_metrics(tactic_text, engine_path, positions, game_limit=10, pos_limit=10):
 
-    print(tactic_text)
+    # print(tactic_text)
 
     total_games = 0  # total number of games
     total_positions = 0 # total number of positions
@@ -97,7 +98,7 @@ async def calc_metrics(tactic_text, engine_path, positions, game_limit=10, pos_l
     dcg = 0
     avg = 0
 
-    transport, engine = await chess.engine.popen_uci(engine_path)
+    engine = chess.engine.SimpleEngine.popen_uci(engine_path)
 
     for game in games(positions):
         curr_positions = 0
@@ -111,12 +112,12 @@ async def calc_metrics(tactic_text, engine_path, positions, game_limit=10, pos_l
             if match:
                 total_matches += 1
                 try:
-                    evals = await get_evals(engine, board, suggestions)
-                    top_n_moves = await get_top_n_moves(engine, len(suggestions), board)
+                    evals = get_evals(engine, board, suggestions)
+                    top_n_moves = get_top_n_moves(engine, len(suggestions), board)
                     dcg += evaluate(evals, top_n_moves)
                     avg += evaluate_avg(evals, top_n_moves)
                 except chess.engine.EngineTerminatedError:
-                    transport, engine = chess.engine.popen_uci(engine_path)
+                    engine = chess.engine.SimpleEngine.popen_uci(engine_path)
                     continue
             curr_positions += 1
             total_positions += 1
@@ -132,7 +133,7 @@ async def calc_metrics(tactic_text, engine_path, positions, game_limit=10, pos_l
         #     print(f'Average = {avg}')
         if game_limit and total_games >= game_limit:
             break
-    await engine.quit()
+    engine.quit()
 
     print(f'Tactic: {tactic_text}')       
     print(f'# of games: {total_games}')
@@ -141,20 +142,21 @@ async def calc_metrics(tactic_text, engine_path, positions, game_limit=10, pos_l
     print(f'DCG = {dcg}')
     print(f'Average = {avg}')
 
+def pred2str(predicate):
+    return f'{predicate.id}({",".join(predicate.args)})'
 
-async def main():
-    # get tactic
-    with open('hspace.txt') as hspace_file:
-        for line in hspace_file:
-            line = line.strip()
-            if '%' not in line:
-                tactic_text = line
-                if tactic_filter(tactic_text):
-                    continue
-                tactic_text = tactic_text.rstrip(' .')
-                
-                await calc_metrics(tactic_text, STOCKFISH, open(LICHESS_2013), game_limit=10, pos_limit=10)
+def parse_result_to_str(parse_result):
+    head_pred = pred2str(parse_result[0])
+    body_preds = ','.join([pred2str(pred) for pred in parse_result[1:]])
+    return f'{head_pred}:-{body_preds}'
+
+def main():
+    tactics = parse_file('hspace_15.txt')
+    tactics = sorted(tactics, key=lambda ele: len(ele) - 1)
+    for tactic in tactics:
+        tactic_text = parse_result_to_str(tactic)
+    
+        calc_metrics(tactic_text, STOCKFISH, open(LICHESS_2013), game_limit=1, pos_limit=1)
 
 if __name__ == '__main__':
-    asyncio.set_event_loop_policy(chess.engine.EventLoopPolicy())
-    asyncio.run(main())
+    main()

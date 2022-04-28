@@ -22,12 +22,11 @@ def create_parser():
 
     fact = (predicate + arguments)
 
-    # a sentence is a fact plus a period
-    sentence = (fact + pp.Suppress('.'))
-
     comment = pp.Literal('%') + pp.Word(pp.alphanums + '_' + ' ' + ',')
 
-    prolog_parser = pp.OneOrMore(pp.Group(sentence)).ignore(comment)
+    rule = (pp.Group(fact) + pp.Suppress(pp.Literal(':-')) + pp.delimited_list(pp.Group(fact), delim=',') + pp.Suppress('.'))
+
+    prolog_parser = pp.OneOrMore(pp.Group(rule)).ignore(comment)
     return prolog_parser
 
 prolog = create_parser()

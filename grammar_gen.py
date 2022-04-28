@@ -118,8 +118,8 @@ Predicate -> {' | '.join([pred_name.capitalize() for pred_name in self.pred_map.
             pred_str = f'{choice.name}{grounding_str}'
             pred_list_str += pred_str + ",\n\t"
         pred_list_str = pred_list_str.strip(',\n\t')
-        return f'''{self.head_pred.name}(From, To, Pos) :-
-\t{pred_list_str}.
+        return f'''{self.head_pred.name}(Pos, From, To) :-
+\t{pred_list_str}
 '''
 
 if __name__ == '__main__':  

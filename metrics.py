@@ -1,3 +1,4 @@
+import logging
 import math
 import os
 from parser import parse_file
@@ -7,6 +8,7 @@ import chess
 import chess.engine
 import chess.pgn
 from pyswip import Prolog
+from tqdm import tqdm
 
 from fen_to_contents import fen_to_contents
 
@@ -18,6 +20,8 @@ MAIA_1100 = os.path.join(os.path.expanduser('~'), 'repos', 'lc0', 'build', 'rele
 
 prolog = Prolog()
 prolog.consult(BK_FILE)
+
+logging.basicConfig(format='[%(levelname)s] [%(asctime)s] %(funcName)s:%(lineno)d - %(message)s', filename='info.log', encoding='utf-8', level=logging.INFO)
 
 def games(pgn):
     while game := chess.pgn.read_game(pgn):
@@ -85,7 +89,7 @@ def calc_metrics(tactic_text, engine, positions, game_limit=10, pos_limit=10):
     dcg = 0
     avg = 0
 
-    for game in games(positions):
+    for game in tqdm(games(positions)):
         curr_positions = 0
         node = game.next() # skip start position
         while not node.is_end():
@@ -107,35 +111,44 @@ def calc_metrics(tactic_text, engine, positions, game_limit=10, pos_limit=10):
         if game_limit and total_games >= game_limit:
             break
     engine.quit()
-
-    print(f'Tactic: {tactic_text}')       
-    print(f'# of games: {total_games}')
-    print(f'# of positions: {total_positions}')
-    print(f'Coverage: {total_matches}') # number of matched positions per game
-    print(f'DCG = {dcg}')
-    print(f'Average = {avg}')
+    
+    logging.info(f'Tactic: {tactic_text}')
+    logging.info(f'# of games: {total_games}')
+    logging.info(f'# of positions: {total_positions}')
+    logging.info(f'Coverage: {total_matches}') # number of matched positions per game
+    logging.info(f'DCG = {dcg}')
+    logging.info(f'Average = {avg}')
 
 def pred2str(predicate):
+    "Converts a parsed predicate into its string representation"
     return f'{predicate.id}({",".join(predicate.args)})'
 
 def parse_result_to_str(parse_result):
+    "Converts a parsed hypothesis space into a list of tactics represented by strings"
     head_pred = pred2str(parse_result[0])
     body_preds = ','.join([pred2str(pred) for pred in parse_result[1:]])
     return f'{head_pred}:-{body_preds}'
 
 def main():
-    tactics = parse_file('hspace_15.txt')
+    hspace_filename = 'hspace.txt'
+    tactics_limit = 20
+    engine_path = STOCKFISH # for calculating divergence
+
+    tactics = parse_file(hspace_filename)
     tactics = sorted(tactics, key=lambda ele: len(ele) - 1)
-    tactics = map(parse_result_to_str, tactics)
-    engine_path = STOCKFISH
+    tactics = list(map(parse_result_to_str, tactics))
     engine = chess.engine.SimpleEngine.popen_uci(engine_path)
-    for tactic in tactics:
+    
+    for tactic in tqdm(tactics[:tactics_limit]):
         tactic_text = tactic
         try:
-            calc_metrics(tactic_text, engine, open(LICHESS_2013), game_limit=5, pos_limit=5)
+            calc_metrics(tactic_text, engine, open(LICHESS_2013), game_limit=10, pos_limit=10)
         except chess.engine.EngineTerminatedError:
             engine = chess.engine.SimpleEngine.popen_uci(engine_path)
             # TODO: how to handle engine failure on a tactic? Need to restart it
+            tactics.append(tactic_text)
             continue
+    engine.close()
+
 if __name__ == '__main__':
     main()

@@ -18,6 +18,9 @@ LICHESS_2013 = os.path.join('data', 'lichess_db_standard_rated_2013-01.pgn')
 STOCKFISH = os.path.join('bin', 'stockfish_14_x64')
 MAIA_1100 = os.path.join(os.path.expanduser('~'), 'repos', 'lc0', 'build', 'release', 'lc0')
 
+prolog = Prolog()
+prolog.consult(BK_FILE)
+
 def games(pgn):
     while game := chess.pgn.read_game(pgn):
         yield game
@@ -64,8 +67,7 @@ def get_top_n_moves(engine, n, board):
 
 def tactic(text, position: List, limit=3):
     "Given the text of a Prolog-based tactic, and a position, check whether the tactic matched in the given position or and if so, what were the suggested moves"
-    prolog = Prolog()
-    prolog.consult(BK_FILE)
+    
     # print(text)
     prolog.assertz(text)
     results = list(prolog.query(f"f({position}, From, To)"))
@@ -82,11 +84,8 @@ def tactic(text, position: List, limit=3):
         
         suggestions = list(map(suggestion_to_move, results))
         suggestions = suggestions[:limit]
+    prolog.retract(text)
     return match, suggestions
-
-# TODO: filter tactic text based on heuristics
-def tactic_filter(tactic_text) -> bool:
-    pass
 
 def calc_metrics(tactic_text, engine_path, positions, game_limit=10, pos_limit=10):
 
@@ -98,7 +97,7 @@ def calc_metrics(tactic_text, engine_path, positions, game_limit=10, pos_limit=1
     dcg = 0
     avg = 0
 
-    engine = chess.engine.SimpleEngine.popen_uci(engine_path)
+    # engine = chess.engine.SimpleEngine.popen_uci(engine_path)
 
     for game in games(positions):
         curr_positions = 0
@@ -112,10 +111,11 @@ def calc_metrics(tactic_text, engine_path, positions, game_limit=10, pos_limit=1
             if match:
                 total_matches += 1
                 try:
-                    evals = get_evals(engine, board, suggestions)
-                    top_n_moves = get_top_n_moves(engine, len(suggestions), board)
-                    dcg += evaluate(evals, top_n_moves)
-                    avg += evaluate_avg(evals, top_n_moves)
+                    # evals = get_evals(engine, board, suggestions)
+                    # top_n_moves = get_top_n_moves(engine, len(suggestions), board)
+                    # dcg += evaluate(evals, top_n_moves)
+                    # avg += evaluate_avg(evals, top_n_moves)
+                    pass
                 except chess.engine.EngineTerminatedError:
                     engine = chess.engine.SimpleEngine.popen_uci(engine_path)
                     continue
@@ -133,7 +133,7 @@ def calc_metrics(tactic_text, engine_path, positions, game_limit=10, pos_limit=1
         #     print(f'Average = {avg}')
         if game_limit and total_games >= game_limit:
             break
-    engine.quit()
+    # engine.quit()
 
     print(f'Tactic: {tactic_text}')       
     print(f'# of games: {total_games}')
@@ -151,16 +151,16 @@ def parse_result_to_str(parse_result):
     return f'{head_pred}:-{body_preds}'
 
 def main():
-    tactics = parse_file('hspace.txt')
+    tactics = parse_file('hspace_15.txt')
     tactics = sorted(tactics, key=lambda ele: len(ele) - 1)
     tactics = map(parse_result_to_str, tactics)
     # print(tactics)
-    tactics = filter(lambda ele: ele.count('make_move') > 0, tactics)
+    # tactics = filter(lambda ele: ele.count('make_move') > 0, tactics)
     # print(tactics)
     for tactic in tactics:
         tactic_text = tactic
-        print(tactic_text)
-        # calc_metrics(tactic_text, STOCKFISH, open(LICHESS_2013), game_limit=1, pos_limit=1)
+        #print(tactic_text)
+        calc_metrics(tactic_text, STOCKFISH, open(LICHESS_2013), game_limit=5, pos_limit=5)
 
 if __name__ == '__main__':
     main()

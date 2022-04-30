@@ -111,10 +111,10 @@ def calc_metrics(tactic_text, engine_path, positions, game_limit=10, pos_limit=1
             if match:
                 total_matches += 1
                 try:
-                    # evals = get_evals(engine, board, suggestions)
-                    # top_n_moves = get_top_n_moves(engine, len(suggestions), board)
-                    # dcg += evaluate(evals, top_n_moves)
-                    # avg += evaluate_avg(evals, top_n_moves)
+                    evals = get_evals(engine, board, suggestions)
+                    top_n_moves = get_top_n_moves(engine, len(suggestions), board)
+                    dcg += evaluate(evals, top_n_moves)
+                    avg += evaluate_avg(evals, top_n_moves)
                     pass
                 except chess.engine.EngineTerminatedError:
                     engine = chess.engine.SimpleEngine.popen_uci(engine_path)

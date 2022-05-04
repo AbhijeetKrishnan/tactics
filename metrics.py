@@ -1,13 +1,16 @@
 import logging
 import math
 import os
+import sys
 from parser import parse_file
 from typing import List
+import argparse
 
 import chess
 import chess.engine
 import chess.pgn
 from pyswip import Prolog
+from pyswip.prolog import PrologError
 from tqdm import tqdm
 
 from fen_to_contents import fen_to_contents
@@ -21,7 +24,8 @@ MAIA_1100 = os.path.join(os.path.expanduser('~'), 'repos', 'lc0', 'build', 'rele
 prolog = Prolog()
 prolog.consult(BK_FILE)
 
-logging.basicConfig(format='[%(levelname)s] [%(asctime)s] %(funcName)s:%(lineno)d - %(message)s', filename='info.log', encoding='utf-8', level=logging.INFO)
+logger = logging.getLogger(__name__)
+logger.propagate = False # https://stackoverflow.com/a/2267567
 
 def games(pgn):
     while game := chess.pgn.read_game(pgn):
@@ -62,13 +66,18 @@ def get_top_n_moves(engine, n, board):
     top_n_moves = [(root['score'].relative, root['pv'][0]) for root in analysis]
     return top_n_moves[:n]
 
-def tactic(text, position: List, limit=3):
+def tactic(text, position: List, limit=3, time_limit=20):
     "Given the text of a Prolog-based tactic, and a position, check whether the tactic matched in the given position or and if so, what were the suggested moves"
     
     prolog.assertz(text)
-    results = list(prolog.query(f"f({position}, From, To)"))
+    query = f"f({position}, From, To)"
+    logger.debug(f'Launching query: {query} with time limit: {time_limit}s')
+    try:
+        results = list(prolog.query(f'call_with_time_limit({time_limit}, {query})', maxresult=limit))
+    except PrologError:
+        return None, None
     if not results:
-        match, suggestions = None, None
+        match, suggestions = False, None
     else:
         match = True
         # convert suggestions to chess.Moves
@@ -78,7 +87,6 @@ def tactic(text, position: List, limit=3):
             return chess.Move(from_sq, to_sq)
         
         suggestions = list(map(suggestion_to_move, results))
-        suggestions = suggestions[:limit]
     prolog.retract(text)
     return match, suggestions
 
@@ -89,13 +97,16 @@ def calc_metrics(tactic_text, engine, positions, game_limit=10, pos_limit=10):
     dcg = 0
     avg = 0
 
-    for game in tqdm(games(positions)):
+    for game in games(positions):
         curr_positions = 0
         node = game.next() # skip start position
         while not node.is_end():
             board = node.board()
             board_predicate = fen_to_contents(board.fen())
             match, suggestions = tactic(tactic_text, board_predicate, limit=3)
+            if match is None:
+                logger.warning(f'pyswip error on tactic {tactic_text}')
+                return
             if match:
                 total_matches += 1
                 evals = get_evals(engine, board, suggestions)
@@ -110,14 +121,21 @@ def calc_metrics(tactic_text, engine, positions, game_limit=10, pos_limit=10):
         total_games += 1
         if game_limit and total_games >= game_limit:
             break
-    engine.quit()
     
-    logging.info(f'Tactic: {tactic_text}')
-    logging.info(f'# of games: {total_games}')
-    logging.info(f'# of positions: {total_positions}')
-    logging.info(f'Coverage: {total_matches}') # number of matched positions per game
-    logging.info(f'DCG = {dcg}')
-    logging.info(f'Average = {avg}')
+    if total_matches > 0:
+        logger.info(f'Tactic: {tactic_text}')
+        logger.info(f'# of games: {total_games}')
+        logger.info(f'# of positions: {total_positions}')
+        logger.info(f'Coverage: {total_matches}') # number of matched positions per game
+        logger.info(f'DCG = {dcg}')
+        logger.info(f'Average = {avg}')
+    else:
+        logger.debug(f'Tactic: {tactic_text}')
+        logger.debug(f'# of games: {total_games}')
+        logger.debug(f'# of positions: {total_positions}')
+        logger.debug(f'Coverage: {total_matches}') # number of matched positions per game
+        logger.debug(f'DCG = {dcg}')
+        logger.debug(f'Average = {avg}')
 
 def pred2str(predicate):
     "Converts a parsed predicate into its string representation"
@@ -130,8 +148,21 @@ def parse_result_to_str(parse_result):
     return f'{head_pred}:-{body_preds}'
 
 def main():
-    hspace_filename = 'hspace.txt'
-    tactics_limit = 20
+    parser = argparse.ArgumentParser(description='Calculate metrics for a set of chess tactics')
+    parser.add_argument('tactics_file', type=str, help='file containing list of tactics')
+    parser.add_argument('--log', dest='log_level', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'], help='Set the logging level', default='INFO')
+    args = parser.parse_args()
+
+    logging.basicConfig(level=getattr(logging, args.log_level))
+    logger = logging.getLogger(__name__)
+    fmt = logging.Formatter('[%(levelname)s] [%(asctime)s] %(funcName)s:%(lineno)d - %(message)s')
+    hdlr = logging.FileHandler('info.log', encoding='utf-8')
+    hdlr.setFormatter(fmt)
+    hdlr.setLevel(logging.DEBUG)
+    logger.addHandler(hdlr)
+
+    hspace_filename = args.tactics_file
+    tactics_limit = 100
     engine_path = STOCKFISH # for calculating divergence
 
     tactics = parse_file(hspace_filename)
@@ -141,6 +172,7 @@ def main():
     
     for tactic in tqdm(tactics[:tactics_limit]):
         tactic_text = tactic
+        logger.debug(tactic_text)
         try:
             calc_metrics(tactic_text, engine, open(LICHESS_2013), game_limit=10, pos_limit=10)
         except chess.engine.EngineTerminatedError:

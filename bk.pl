@@ -26,6 +26,7 @@ piece(Piece) :-
     member(Piece, [pawn, knight, bishop, rook, queen, king]).
 
 sliding_piece(Piece) :-
+    piece(Piece),
     member(Piece, [bishop, rook, queen]).
 
 contents(Side,Piece,X,Y) :-
@@ -44,6 +45,10 @@ can_move(Piece, FromX, FromY, ToX, ToY) :-
     DelX is ToX - FromX,
     DelY is ToY - FromY,
     allowed_del(Piece, DelX, DelY).
+
+position(Pos) :- 
+    % how to indicate list of contents/4 predicates?
+    is_list(Pos).
 
 allowed_del(knight, -1, 2).
 allowed_del(knight, 1, 2).
@@ -184,7 +189,75 @@ to_coords(h6, 8, 6).
 to_coords(h7, 8, 7).
 to_coords(h8, 8, 8).
 
+sq(a1).
+sq(a2).
+sq(a3).
+sq(a4).
+sq(a5).
+sq(a6).
+sq(a7).
+sq(a8).
+sq(b1).
+sq(b2).
+sq(b3).
+sq(b4).
+sq(b5).
+sq(b6).
+sq(b7).
+sq(b8).
+sq(c1).
+sq(c2).
+sq(c3).
+sq(c4).
+sq(c5).
+sq(c6).
+sq(c7).
+sq(c8).
+sq(d1).
+sq(d2).
+sq(d3).
+sq(d4).
+sq(d5).
+sq(d6).
+sq(d7).
+sq(d8).
+sq(e1).
+sq(e2).
+sq(e3).
+sq(e4).
+sq(e5).
+sq(e6).
+sq(e7).
+sq(e8).
+sq(f1).
+sq(f2).
+sq(f3).
+sq(f4).
+sq(f5).
+sq(f6).
+sq(f7).
+sq(f8).
+sq(g1).
+sq(g2).
+sq(g3).
+sq(g4).
+sq(g5).
+sq(g6).
+sq(g7).
+sq(g8).
+sq(h1).
+sq(h2).
+sq(h3).
+sq(h4).
+sq(h5).
+sq(h6).
+sq(h7).
+sq(h8).
+
 attacks(From,To,Pos) :-
+    position(Pos),
+    sq(From),
+    sq(To),
     to_coords(From, FromX, FromY),
     to_coords(To, ToX, ToY),
     member(contents(Side,Piece,FromX,FromY), Pos),
@@ -195,6 +268,8 @@ attacks(From,To,Pos) :-
     can_move(Piece, FromX, FromY, ToX, ToY).
 
 different_pos(S1, S2) :-
+    sq(S1),
+    sq(S2),
     to_coords(S1, X1, Y1),
     to_coords(S2, X2, Y2),
     square(X1, Y1),
@@ -204,8 +279,13 @@ different_pos(S1, S2) :-
         Y1 =\= Y2 -> true ;
         false
     ).
+different_pos(S1, S2) :- different_pos(S2, S1).
 
 piece_at(S, Pos, Side, Piece) :-
+    sq(S),
+    position(Pos),
+    side(Side),
+    piece(Piece),
     to_coords(S, X, Y),
     member(contents(Side, Piece, X, Y), Pos).
 
@@ -216,6 +296,10 @@ fork(Pos, From, To) :-
     different_pos(S1, S2).
 
 behind(Front, Middle, Back, Pos) :-
+    sq(Front),
+    sq(Middle),
+    sq(Back),
+    position(Pos),
     attacks(Front, Middle, Pos),
     attacks(Front, Back, Pos),
     piece_at(Front, Pos, _, Piece),
@@ -236,11 +320,18 @@ pin(Pos, From, To) :-
 % TODO: turn this into an actual legal_move property calculator?
 % if I have this working correctly, I don't need to pass in all the legal moves in the target relation
 legal_move(FromX,FromY,ToX,ToY,Pos) :-
+    square(FromX, FromY),
+    square(ToX, ToY),
+    position(Pos),
     member(contents(_,Piece,FromX,FromY),Pos), % piece to be moved exists
     can_move(Piece,FromX,FromY,ToX,ToY). % move for the piece is theoretically permitted (if board was empty)
     
 make_move(From, To, Pos, NewPos) :-
     \+ ground(NewPos),
+    sq(From),
+    sq(To),
+    position(Pos),
+    position(NewPos),
     to_coords(From, FromX, FromY),
     to_coords(To, ToX, ToY),
     legal_move(FromX,FromY,ToX,ToY,Pos),

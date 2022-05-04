@@ -66,14 +66,14 @@ def get_top_n_moves(engine, n, board):
     top_n_moves = [(root['score'].relative, root['pv'][0]) for root in analysis]
     return top_n_moves[:n]
 
-def tactic(text, position: List, limit=3, time_limit=20):
+def tactic(text, position: List, limit=3, time_limit_sec=20):
     "Given the text of a Prolog-based tactic, and a position, check whether the tactic matched in the given position or and if so, what were the suggested moves"
     
     prolog.assertz(text)
     query = f"f({position}, From, To)"
-    logger.debug(f'Launching query: {query} with time limit: {time_limit}s')
+    logger.debug(f'Launching query: {query} with time limit: {time_limit_sec}s')
     try:
-        results = list(prolog.query(f'call_with_time_limit({time_limit}, {query})', maxresult=limit))
+        results = list(prolog.query(f'call_with_time_limit({time_limit_sec}, {query})', maxresult=limit))
     except PrologError:
         return None, None
     if not results:
@@ -151,6 +151,9 @@ def main():
     parser = argparse.ArgumentParser(description='Calculate metrics for a set of chess tactics')
     parser.add_argument('tactics_file', type=str, help='file containing list of tactics')
     parser.add_argument('--log', dest='log_level', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'], help='Set the logging level', default='INFO')
+    parser.add_argument('-n', '--num_tactics', dest='tactics_limit', type=int, help='Number of tactics to analyze', default=100)
+    parser.add_argument('-e', '--engine', dest='engine_path', default=STOCKFISH, help='Path to engine executable to use for calculating divergence')
+    parser.add_argument('-p', '--position_db', dest='position_db', default=LICHESS_2013, help='Path to PGN file of positions to use for calculating divergence')
     args = parser.parse_args()
 
     logging.basicConfig(level=getattr(logging, args.log_level))
@@ -162,8 +165,9 @@ def main():
     logger.addHandler(hdlr)
 
     hspace_filename = args.tactics_file
-    tactics_limit = 100
-    engine_path = STOCKFISH # for calculating divergence
+    tactics_limit = args.tactics_limit
+    engine_path = args.engine_path # for calculating divergence
+    position_db = args.position_db
 
     tactics = parse_file(hspace_filename)
     tactics = sorted(tactics, key=lambda ele: len(ele) - 1)
@@ -174,7 +178,7 @@ def main():
         tactic_text = tactic
         logger.debug(tactic_text)
         try:
-            calc_metrics(tactic_text, engine, open(LICHESS_2013), game_limit=10, pos_limit=10)
+            calc_metrics(tactic_text, engine, open(position_db), game_limit=10, pos_limit=10)
         except chess.engine.EngineTerminatedError:
             engine = chess.engine.SimpleEngine.popen_uci(engine_path)
             # TODO: how to handle engine failure on a tactic? Need to restart it

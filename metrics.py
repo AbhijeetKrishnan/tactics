@@ -75,6 +75,7 @@ def tactic(text, position: List, limit=3, time_limit_sec=20):
     try:
         results = list(prolog.query(f'call_with_time_limit({time_limit_sec}, {query})', maxresult=limit))
     except PrologError:
+        logger.warning(f'timeout after {time_limit_sec}s on tactic {text}')
         return None, None
     if not results:
         match, suggestions = False, None
@@ -105,7 +106,6 @@ def calc_metrics(tactic_text, engine, positions, game_limit=10, pos_limit=10):
             board_predicate = fen_to_contents(board.fen())
             match, suggestions = tactic(tactic_text, board_predicate, limit=3)
             if match is None:
-                logger.warning(f'pyswip error on tactic {tactic_text}')
                 return
             if match:
                 total_matches += 1

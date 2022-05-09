@@ -98,7 +98,7 @@ def calc_metrics(tactic_text, engine, positions, game_limit=10, pos_limit=10):
     dcg = 0
     avg = 0
 
-    for game in games(positions):
+    for game in tqdm(games(positions), total=game_limit * pos_limit, desc='Positions', unit='positions', leave=False):
         curr_positions = 0
         node = game.next() # skip start position
         while not node.is_end():
@@ -174,7 +174,7 @@ def main():
     tactics = list(map(parse_result_to_str, tactics))
     engine = chess.engine.SimpleEngine.popen_uci(engine_path)
     
-    for tactic in tqdm(tactics[:tactics_limit]):
+    for tactic in tqdm(tactics[:tactics_limit], desc='Tactics', unit='tactics'):
         tactic_text = tactic
         logger.debug(tactic_text)
         try:

@@ -22,7 +22,7 @@ def create_parser():
 
     fact = (predicate + arguments)
 
-    comment = pp.Literal('%') + pp.Word(pp.alphanums + '_' + ' ' + ',')
+    comment = pp.Literal('%') + pp.Word(pp.alphanums + '_' + ' ' + ',' + ':')
 
     rule = (pp.Group(fact) + pp.Suppress(pp.Literal(':-')) + pp.delimited_list(pp.Group(fact), delim=',') + pp.Suppress('.'))
 

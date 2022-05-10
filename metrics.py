@@ -21,6 +21,15 @@ LICHESS_2013 = os.path.join('data', 'lichess_db_standard_rated_2013-01.pgn')
 STOCKFISH = os.path.join('bin', 'stockfish_14_x64')
 MAIA_1100 = os.path.join(os.path.expanduser('~'), 'repos', 'lc0', 'build', 'release', 'lc0')
 
+PRED_VALUE = {
+    'make_move': 0,
+    'attacks': 1,
+    'behind': 1,
+    'piece_at': 2,
+    'different_pos': 3,
+    'other_side': 3
+}
+
 prolog = Prolog()
 prolog.consult(BK_FILE)
 
@@ -66,7 +75,7 @@ def get_top_n_moves(engine, n, board):
     top_n_moves = [(root['score'].relative, root['pv'][0]) for root in analysis]
     return top_n_moves[:n]
 
-def tactic(text, position: List, limit=3, time_limit_sec=20):
+def tactic(text, position: List, limit=3, time_limit_sec=5):
     "Given the text of a Prolog-based tactic, and a position, check whether the tactic matched in the given position or and if so, what were the suggested moves"
     
     prolog.assertz(text)
@@ -74,6 +83,7 @@ def tactic(text, position: List, limit=3, time_limit_sec=20):
     logger.debug(f'Launching query: {query} with time limit: {time_limit_sec}s')
     try:
         results = list(prolog.query(f'call_with_time_limit({time_limit_sec}, {query})', maxresult=limit))
+        logger.debug(f'Results: {results}')
     except PrologError:
         logger.warning(f'timeout after {time_limit_sec}s on tactic {text}')
         return None, None
@@ -86,7 +96,6 @@ def tactic(text, position: List, limit=3, time_limit_sec=20):
             from_sq = chess.parse_square(suggestion['From'])
             to_sq = chess.parse_square(suggestion['To'])
             return chess.Move(from_sq, to_sq)
-        
         suggestions = list(map(suggestion_to_move, results))
     prolog.retract(text)
     return match, suggestions
@@ -143,9 +152,13 @@ def pred2str(predicate):
 
 def parse_result_to_str(parse_result):
     "Converts a parsed hypothesis space into a list of tactics represented by strings"
-    head_pred = pred2str(parse_result[0])
-    body_preds = ','.join([pred2str(pred) for pred in parse_result[1:]])
-    return f'{head_pred}:-{body_preds}'
+    head_pred_str = pred2str(parse_result[0])
+    body_preds = parse_result[1:]
+    body_preds.sort(key=lambda pred: PRED_VALUE[pred.id])
+    body_preds_str = ','.join([pred2str(pred) for pred in body_preds])
+    tactic_str = f'{head_pred_str}:-{body_preds_str}'
+    logger.debug(f'Tactic str: {tactic_str}')
+    return tactic_str
 
 def main():
     parser = argparse.ArgumentParser(description='Calculate metrics for a set of chess tactics')

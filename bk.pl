@@ -144,22 +144,17 @@ position(Pos) :-
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+:- dynamic legal_move/5.
+
 attacks(From,To,Pos) :-
-    position(Pos),
-    sq(From),
-    sq(To),
     to_coords(From, FromX, FromY),
     to_coords(To, ToX, ToY),
     member(contents(Side,Piece,FromX,FromY), Pos),
     member(contents(OtherSide,OtherPiece,ToX,ToY), Pos),
     other_side(Side, OtherSide),
-    piece(Piece),
-    piece(OtherPiece),
-    can_move(Piece, FromX, FromY, ToX, ToY).
+    legal_move(FromX, FromY, ToX, ToY, Pos).
 
 different_pos(S1, S2) :-
-    sq(S1),
-    sq(S2),
     to_coords(S1, X1, Y1),
     to_coords(S2, X2, Y2),
     square(X1, Y1),
@@ -167,61 +162,34 @@ different_pos(S1, S2) :-
     ( 
         X1 =\= X2 -> true ;
         Y1 =\= Y2 -> true ;
-        false
+        !, fail
     ).
-different_pos(S1, S2) :- different_pos(S2, S1).
+% different_pos(S1, S2) :- different_pos(S2, S1).
 
 piece_at(S, Pos, Side, Piece) :-
-    sq(S),
-    position(Pos),
-    side(Side),
-    piece(Piece),
     to_coords(S, X, Y),
     member(contents(Side, Piece, X, Y), Pos).
 
-fork(Pos, From, To) :-
-    make_move(From, To, Pos, NewPos),
-    attacks(To, S1, NewPos),
-    attacks(To, S2, NewPos),
-    different_pos(S1, S2).
-
 behind(Front, Middle, Back, Pos) :-
-    sq(Front),
-    sq(Middle),
-    sq(Back),
-    position(Pos),
     attacks(Front, Middle, Pos),
     attacks(Front, Back, Pos),
     piece_at(Front, Pos, _, Piece),
     sliding_piece(Piece).
-
-pin(Pos, From, To) :-
-    make_move(From, To, Pos, NewPos),
-    behind(To, Middle, Back, NewPos),
-    piece_at(To, NewPos, SameSide, _),
-    piece_at(Middle, NewPos, OppSide, _),
-    piece_at(Back, NewPos, OppSide, _),
-    different_pos(Middle, Back),
-    other_side(SameSide, OppSide).
 
 % TODO: design a "state" property
 
 % legal move is one where piece of move color exists at move location
 % TODO: turn this into an actual legal_move property calculator?
 % if I have this working correctly, I don't need to pass in all the legal moves in the target relation
-legal_move(FromX,FromY,ToX,ToY,Pos) :-
-    square(FromX, FromY),
-    square(ToX, ToY),
-    position(Pos),
-    member(contents(_,Piece,FromX,FromY),Pos), % piece to be moved exists
-    can_move(Piece,FromX,FromY,ToX,ToY). % move for the piece is theoretically permitted (if board was empty)
+% legal_move(FromX,FromY,ToX,ToY,Pos) :-
+%     square(FromX, FromY),
+%     square(ToX, ToY),
+%     position(Pos),
+%     member(contents(_,Piece,FromX,FromY),Pos), % piece to be moved exists
+%     can_move(Piece,FromX,FromY,ToX,ToY). % move for the piece is theoretically permitted (if board was empty)
     
 make_move(From, To, Pos, NewPos) :-
     \+ ground(NewPos),
-    sq(From),
-    sq(To),
-    position(Pos),
-    position(NewPos),
     to_coords(From, FromX, FromY),
     to_coords(To, ToX, ToY),
     legal_move(FromX,FromY,ToX,ToY,Pos),
@@ -236,3 +204,18 @@ make_move(From, To, Pos, NewPos) :-
     ).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+pin(Pos, From, To) :-
+    make_move(From, To, Pos, NewPos),
+    behind(To, Middle, Back, NewPos),
+    piece_at(To, NewPos, SameSide, _),
+    piece_at(Middle, NewPos, OppSide, _),
+    piece_at(Back, NewPos, OppSide, _),
+    different_pos(Middle, Back),
+    other_side(SameSide, OppSide).
+
+fork(Pos, From, To) :-
+    make_move(From, To, Pos, NewPos),
+    attacks(To, S1, NewPos),
+    attacks(To, S2, NewPos),
+    different_pos(S1, S2).

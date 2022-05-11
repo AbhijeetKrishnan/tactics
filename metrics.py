@@ -44,7 +44,6 @@ def get_evals(engine, board, suggestions):
     evals = []
     for move in suggestions:
         analysis = engine.analyse(board, limit=chess.engine.Limit(depth=1), root_moves=[move])
-        # TODO: how to handle illegal move in suggestions?
         if 'pv' in analysis: 
             evals.append((analysis['score'].relative, analysis['pv'][0]))
     return evals
@@ -75,10 +74,22 @@ def get_top_n_moves(engine, n, board):
     top_n_moves = [(root['score'].relative, root['pv'][0]) for root in analysis]
     return top_n_moves[:n]
 
-def tactic(text, position: List, limit=3, time_limit_sec=5):
+def tactic(text, board, limit=3, time_limit_sec=5):
     "Given the text of a Prolog-based tactic, and a position, check whether the tactic matched in the given position or and if so, what were the suggested moves"
     
+    position = fen_to_contents(board.fen())
+    
     prolog.assertz(text)
+    # assert legal moves based on current position
+    for move in board.legal_moves:
+        from_sq = move.from_square
+        to_sq = move.to_square
+        from_x, from_y = chess.square_file(from_sq) + 1, chess.square_rank(from_sq) + 1
+        to_x, to_y = chess.square_file(to_sq) + 1, chess.square_rank(to_sq) + 1
+        legal_move_pred = f'legal_move({from_x}, {from_y}, {to_x}, {to_y}, {position})'
+        logger.debug(f'Legal move predicate: {legal_move_pred}')
+        prolog.assertz(legal_move_pred)
+
     query = f"f({position}, From, To)"
     logger.debug(f'Launching query: {query} with time limit: {time_limit_sec}s')
     try:
@@ -98,6 +109,7 @@ def tactic(text, position: List, limit=3, time_limit_sec=5):
             return chess.Move(from_sq, to_sq)
         suggestions = list(map(suggestion_to_move, results))
     prolog.retract(text)
+    prolog.retractall('legal_move(_, _, _, _, _)')
     return match, suggestions
 
 def calc_metrics(tactic_text, engine, positions, game_limit=10, pos_limit=10):
@@ -112,8 +124,7 @@ def calc_metrics(tactic_text, engine, positions, game_limit=10, pos_limit=10):
         node = game.next() # skip start position
         while not node.is_end():
             board = node.board()
-            board_predicate = fen_to_contents(board.fen())
-            match, suggestions = tactic(tactic_text, board_predicate, limit=3)
+            match, suggestions = tactic(tactic_text, board, limit=3)
             if match is None:
                 return
             if match:

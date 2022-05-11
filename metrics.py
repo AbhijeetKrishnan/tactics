@@ -21,8 +21,10 @@ LICHESS_2013 = os.path.join('data', 'lichess_db_standard_rated_2013-01.pgn')
 STOCKFISH = os.path.join('bin', 'stockfish_14_x64')
 MAIA_1100 = os.path.join(os.path.expanduser('~'), 'repos', 'lc0', 'build', 'release', 'lc0')
 
+# TODO: brainstorm how to add this info in the bias file
 PRED_VALUE = {
     'make_move': 0,
+    'legal_move': 0,
     'attacks': 1,
     'behind': 1,
     'piece_at': 2,
@@ -203,7 +205,7 @@ def main():
     engine = chess.engine.SimpleEngine.popen_uci(engine_path)
     
     for tactic in tqdm(tactics[:tactics_limit], desc='Tactics', unit='tactics'):
-        tactic_text = + 'legal_move(B,C,A),' + tactic
+        tactic_text = tactic
         logger.debug(tactic_text)
         try:
             calc_metrics(tactic_text, engine, open(position_db), game_limit=10, pos_limit=10)

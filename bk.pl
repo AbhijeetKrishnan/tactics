@@ -144,15 +144,15 @@ position(Pos) :-
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-:- dynamic legal_move/5.
+:- dynamic legal_move/3.
 
 attacks(From,To,Pos) :-
     to_coords(From, FromX, FromY),
     to_coords(To, ToX, ToY),
-    member(contents(Side,Piece,FromX,FromY), Pos),
-    member(contents(OtherSide,OtherPiece,ToX,ToY), Pos),
+    member(contents(Side,_,FromX,FromY), Pos),
+    member(contents(OtherSide,_,ToX,ToY), Pos),
     other_side(Side, OtherSide),
-    legal_move(FromX, FromY, ToX, ToY, Pos).
+    legal_move(From, To, Pos).
 
 different_pos(S1, S2) :-
     to_coords(S1, X1, Y1),
@@ -192,7 +192,7 @@ make_move(From, To, Pos, NewPos) :-
     \+ ground(NewPos),
     to_coords(From, FromX, FromY),
     to_coords(To, ToX, ToY),
-    legal_move(FromX,FromY,ToX,ToY,Pos),
+    legal_move(From, To, Pos),
     member(contents(Side,Piece,FromX,FromY),Pos),
     delete(Pos, contents(Side,Piece,FromX,FromY), TmpPos),
     append(TmpPos, [contents(Side, Piece, ToX, ToY)], TmpNewUnsortedPos),

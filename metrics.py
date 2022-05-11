@@ -82,11 +82,9 @@ def tactic(text, board, limit=3, time_limit_sec=5):
     prolog.assertz(text)
     # assert legal moves based on current position
     for move in board.legal_moves:
-        from_sq = move.from_square
-        to_sq = move.to_square
-        from_x, from_y = chess.square_file(from_sq) + 1, chess.square_rank(from_sq) + 1
-        to_x, to_y = chess.square_file(to_sq) + 1, chess.square_rank(to_sq) + 1
-        legal_move_pred = f'legal_move({from_x}, {from_y}, {to_x}, {to_y}, {position})'
+        from_sq = chess.square_name(move.from_square)
+        to_sq = chess.square_name(move.to_square)
+        legal_move_pred = f'legal_move({from_sq}, {to_sq}, {position})'
         logger.debug(f'Legal move predicate: {legal_move_pred}')
         prolog.assertz(legal_move_pred)
 
@@ -109,15 +107,16 @@ def tactic(text, board, limit=3, time_limit_sec=5):
             return chess.Move(from_sq, to_sq)
         suggestions = list(map(suggestion_to_move, results))
     prolog.retract(text)
-    prolog.retractall('legal_move(_, _, _, _, _)')
+    prolog.retractall('legal_move(_, _, _)')
     return match, suggestions
 
 def calc_metrics(tactic_text, engine, positions, game_limit=10, pos_limit=10):
     total_games = 0  # total number of games
-    total_positions = 0 # total number of positions
+    total_positions = 0 # total number of positions (across all games)
     total_matches = 0
     dcg = 0
     avg = 0
+    empty_suggestions = 0
 
     for game in tqdm(games(positions), total=game_limit * pos_limit, desc='Positions', unit='positions', leave=False):
         curr_positions = 0
@@ -129,10 +128,13 @@ def calc_metrics(tactic_text, engine, positions, game_limit=10, pos_limit=10):
                 return
             if match:
                 total_matches += 1
-                evals = get_evals(engine, board, suggestions)
-                top_n_moves = get_top_n_moves(engine, len(suggestions), board)
-                dcg += evaluate(evals, top_n_moves)
-                avg += evaluate_avg(evals, top_n_moves)
+                if suggestions:
+                    evals = get_evals(engine, board, suggestions)
+                    top_n_moves = get_top_n_moves(engine, len(suggestions), board)
+                    dcg += evaluate(evals, top_n_moves)
+                    avg += evaluate_avg(evals, top_n_moves)
+                else:
+                    empty_suggestions += 1
             curr_positions += 1
             total_positions += 1
             if pos_limit and curr_positions >= pos_limit:
@@ -146,16 +148,18 @@ def calc_metrics(tactic_text, engine, positions, game_limit=10, pos_limit=10):
         logger.info(f'Tactic: {tactic_text}')
         logger.info(f'# of games: {total_games}')
         logger.info(f'# of positions: {total_positions}')
-        logger.info(f'Coverage: {total_matches}') # number of matched positions per game
-        logger.info(f'DCG = {dcg}')
-        logger.info(f'Average = {avg}')
+        logger.info(f'Coverage: {total_matches / total_positions * 100:.2f}%') # % of matched positions
+        logger.info(f'# of empty suggestions: {empty_suggestions}/{total_positions}') # number of positions where tactic did not suggest any move
+        logger.info(f'DCG = {dcg:.2f}')
+        logger.info(f'Average = {avg:.2f}')
     else:
         logger.debug(f'Tactic: {tactic_text}')
         logger.debug(f'# of games: {total_games}')
         logger.debug(f'# of positions: {total_positions}')
-        logger.debug(f'Coverage: {total_matches}') # number of matched positions per game
-        logger.debug(f'DCG = {dcg}')
-        logger.debug(f'Average = {avg}')
+        logger.debug(f'Coverage: {total_matches / total_positions * 100:.2f}%') # % of matched positions
+        logger.debug(f'# of empty suggestions: {empty_suggestions}/{total_positions}') # number of positions where tactic did not suggest any move
+        logger.debug(f'DCG = {dcg:.2f}')
+        logger.debug(f'Average = {avg:.2f}')
 
 def pred2str(predicate):
     "Converts a parsed predicate into its string representation"
@@ -199,7 +203,7 @@ def main():
     engine = chess.engine.SimpleEngine.popen_uci(engine_path)
     
     for tactic in tqdm(tactics[:tactics_limit], desc='Tactics', unit='tactics'):
-        tactic_text = tactic
+        tactic_text = + 'legal_move(B,C,A),' + tactic
         logger.debug(tactic_text)
         try:
             calc_metrics(tactic_text, engine, open(position_db), game_limit=10, pos_limit=10)

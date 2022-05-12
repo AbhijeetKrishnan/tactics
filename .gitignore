@@ -5,6 +5,7 @@ bin/*
 *.txt
 *.log
 hspace/*
+*.csv
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -4,8 +4,10 @@ import os
 import random
 from contextlib import contextmanager
 from typing import List, Optional, TextIO, Union
+import code
 
-PathLike = Optional[Union[int, float, str, bytes, bytearray]]
+Seed = Optional[Union[int, float, str, bytes, bytearray]]
+PathLike = Union[str, bytes, os.PathLike]
 
 import chess
 import chess.engine
@@ -26,14 +28,15 @@ def get_engine(engine_path: PathLike):
     finally:
         engine.close()
 
-def sample_pgn(handle: TextIO, num_games: int=10, pos_per_game: int=15, seed: PathLike=1) -> List[chess.Board]:
+def sample_pgn(handle: TextIO, num_games: int=10, pos_per_game: int=10, seed: Seed=1) -> List[chess.Board]:
     "Sample positions from games in a PGN file"
-
-    # obtain num_game offsets from list of games
     random.seed(seed)
     result = []
+
+    # obtain num_game offsets from list of games
     offsets = []
-    while header := chess.pgn.read_header(handle) is not None:
+    # code.interact(local=locals())
+    while _ := chess.pgn.read_headers(handle) is not None:
         offset = handle.tell()
         offsets.append(offset)
     sampled_offsets = random.sample(offsets, num_games)
@@ -66,12 +69,13 @@ def gen_exs(exs_pgn_path: PathLike, engine_path: PathLike, num_games: int=10, po
     
     with get_engine(engine_path) as engine:
         for position in sample_positions:
-            moves = get_engine_moves(engine, position, neg_to_pos_ratio)
+            moves = get_engine_moves(engine, position, neg_to_pos_ratio + 1)
             if not moves:
                 continue
-            yield {'fen': position.fen(), 'uci': move.uci(), 'label': True}
-            for move in moves[1:]:
-                yield {'fen': position.fen(), 'uci': move.uci(), 'label': False}
+            _, top_move = moves[0]
+            yield {'fen': position.fen(), 'uci': top_move.uci(), 'label': 1}
+            for _, move in moves[1:]:
+                yield {'fen': position.fen(), 'uci': move.uci(), 'label': 0}
 
 def main():
     parser = argparse.ArgumentParser(description='Generate tactic training examples and write them to a csv file')
@@ -83,7 +87,7 @@ def main():
     parser.add_argument('-r', '--ratio', dest='neg_to_pos_ratio', type=int, default=3, help='Ratio of negative to positive examples to generate')
     args = parser.parse_args()
 
-    with open(args.pgn_file, encoding='utf-8') as output:
+    with open(args.example_file, 'w') as output:
         field_names = ['fen', 'uci', 'label']
         writer = csv.DictWriter(output, fieldnames=field_names)
 

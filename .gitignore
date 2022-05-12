@@ -4,6 +4,7 @@ data/*
 bin/*
 *.txt
 *.log
+hspace/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

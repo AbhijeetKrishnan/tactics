@@ -35,10 +35,12 @@ def parse_file(filename):
     result = prolog.parse_file(filename, parse_all=True)
     return result
 
-def to_pred_str(predicate):
+def to_pred_str(predicate) -> str:
     return f'{predicate.id}/{len(predicate.args)}'
 
-def to_pred(predicate):
+def to_pred(predicate) -> str:
+    "Converts a parsed predicate into its string representation"
+
     return f'{predicate.id}({",".join(predicate.args)})'
 
 def get_pred_str_list(results):

@@ -1,10 +1,7 @@
+import argparse
 import logging
 import math
-import os
-import sys
-from parser import parse_file
-from typing import List
-import argparse
+from typing import List, Optional, TextIO, Tuple
 
 import chess
 import chess.engine
@@ -13,13 +10,9 @@ from pyswip import Prolog
 from pyswip.prolog import PrologError
 from tqdm import tqdm
 
-from fen_to_contents import fen_to_contents
-
-BK_FILE = os.path.join('bk.pl')
-
-LICHESS_2013 = os.path.join('data', 'lichess_db_standard_rated_2013-01.pgn')
-STOCKFISH = os.path.join('bin', 'stockfish_14_x64')
-MAIA_1100 = os.path.join(os.path.expanduser('~'), 'repos', 'lc0', 'build', 'release', 'lc0')
+from parser import parse_file, to_pred
+from util import (BK_FILE, LICHESS_2013, MAIA_1100, STOCKFISH, fen_to_contents,
+                  get_engine)
 
 # TODO: brainstorm how to add this info in the bias file
 PRED_VALUE = {
@@ -32,17 +25,14 @@ PRED_VALUE = {
     'other_side': 3
 }
 
-prolog = Prolog()
-prolog.consult(BK_FILE)
-
 logger = logging.getLogger(__name__)
 logger.propagate = False # https://stackoverflow.com/a/2267567
 
-def games(pgn):
-    while game := chess.pgn.read_game(pgn):
+def games(pgn_file_handle: TextIO):
+    while game := chess.pgn.read_game(pgn_file_handle):
         yield game
 
-def get_evals(engine, board, suggestions):
+def get_evals(engine: chess.engine.SimpleEngine, board: chess.Board, suggestions: List[chess.Move]) -> List[Tuple[float, chess.Move]]:
     evals = []
     for move in suggestions:
         analysis = engine.analyse(board, limit=chess.engine.Limit(depth=1), root_moves=[move])
@@ -50,7 +40,7 @@ def get_evals(engine, board, suggestions):
             evals.append((analysis['score'].relative, analysis['pv'][0]))
     return evals
 
-def evaluate(evaluated_suggestions, top_moves):
+def evaluate(evaluated_suggestions: List[Tuple[float, chess.Move]], top_moves: List[chess.Move]) -> float:
     dcg = 0
     for idx, (evaluated_move, top_move) in enumerate(zip(evaluated_suggestions, top_moves)):
         score, move = evaluated_move
@@ -61,7 +51,7 @@ def evaluate(evaluated_suggestions, top_moves):
         dcg += error / math.log2(1 + (idx + 1))
     return dcg
 
-def evaluate_avg(evaluated_suggestions, top_moves):
+def evaluate_avg(evaluated_suggestions: List[Tuple[float, chess.Move]], top_moves: List[chess.Move]) -> float:
     total = 0
     for idx, (evaluated_move, top_move) in enumerate(zip(evaluated_suggestions, top_moves)):
         score, move = evaluated_move
@@ -71,12 +61,12 @@ def evaluate_avg(evaluated_suggestions, top_moves):
         total += abs(top_eval - eval)
     return total / len(top_moves)
 
-def get_top_n_moves(engine, n, board):
+def get_top_n_moves(engine: chess.engine.SimpleEngine, n: int, board: chess.Board) -> List[Tuple[float, chess.Move]]:
     analysis = engine.analyse(board, limit=chess.engine.Limit(depth=1), multipv=n)
     top_n_moves = [(root['score'].relative, root['pv'][0]) for root in analysis]
     return top_n_moves[:n]
 
-def tactic(text, board, limit=3, time_limit_sec=5):
+def tactic(prolog, text: str, board: chess.Board, limit: int=3, time_limit_sec: int=5) -> Tuple[Optional[bool], Optional[List[chess.Move]]]:
     "Given the text of a Prolog-based tactic, and a position, check whether the tactic matched in the given position or and if so, what were the suggested moves"
     
     position = fen_to_contents(board.fen())
@@ -112,67 +102,64 @@ def tactic(text, board, limit=3, time_limit_sec=5):
     prolog.retractall('legal_move(_, _, _)')
     return match, suggestions
 
-def calc_metrics(tactic_text, engine, positions, game_limit=10, pos_limit=10):
-    total_games = 0  # total number of games
-    total_positions = 0 # total number of positions (across all games)
-    total_matches = 0
-    dcg = 0
-    avg = 0
-    empty_suggestions = 0
+def print_metrics(metrics: dict, log_level=logging.INFO, **kwargs) -> None:
+    tactic_text = kwargs['tactic_text']
+    logger.log(log_level, f"Tactic: {tactic_text}")
+    logger.log(log_level, f"# of games: {metrics['total_games']}")
+    logger.log(log_level, f"# of positions: {metrics['total_positions']}")
+    logger.log(log_level, f"Coverage: {metrics['total_matches'] / metrics['total_positions'] * 100:.2f}%") # % of matched positions
+    logger.log(log_level, f"# of empty suggestions: {metrics['empty_suggestions']}/{metrics['total_positions']}") # number of positions where tactic did not suggest any move
+    logger.log(log_level, f"DCG = {metrics['dcg']:.2f}")
+    logger.log(log_level, f"Average = {metrics['avg']:.2f}")
 
-    for game in tqdm(games(positions), total=game_limit * pos_limit, desc='Positions', unit='positions', leave=False):
+def calc_metrics(prolog, tactic_text: str, engine: chess.engine.SimpleEngine, pgn_file_handle: TextIO, game_limit: int=10, pos_limit: int=10) -> None:
+    metrics = {
+        'total_games': 0,  # total number of games
+        'total_positions': 0, # total number of positions (across all games)
+        'total_matches': 0,
+        'dcg': 0,
+        'avg': 0,
+        'empty_suggestions': 0
+    }
+
+    for game in tqdm(games(pgn_file_handle), total=game_limit * pos_limit, desc='Positions', unit='positions', leave=False):
         curr_positions = 0
         node = game.next() # skip start position
         while not node.is_end():
             board = node.board()
-            match, suggestions = tactic(tactic_text, board, limit=3)
+            match, suggestions = tactic(prolog, tactic_text, board, limit=3)
             if match is None:
                 return
             if match:
-                total_matches += 1
+                metrics['total_matches'] += 1
                 if suggestions:
                     evals = get_evals(engine, board, suggestions)
                     top_n_moves = get_top_n_moves(engine, len(suggestions), board)
-                    dcg += evaluate(evals, top_n_moves)
-                    avg += evaluate_avg(evals, top_n_moves)
+                    metrics['dcg'] += evaluate(evals, top_n_moves)
+                    metrics['avg'] += evaluate_avg(evals, top_n_moves)
                 else:
-                    empty_suggestions += 1
+                    metrics['empty_suggestions'] += 1
             curr_positions += 1
-            total_positions += 1
+            metrics['total_positions'] += 1
             if pos_limit and curr_positions >= pos_limit:
                 break
             node = node.next()
-        total_games += 1
-        if game_limit and total_games >= game_limit:
+        metrics['total_games'] += 1
+        if game_limit and metrics['total_games'] >= game_limit:
             break
     
-    if total_matches > 0:
-        logger.info(f'Tactic: {tactic_text}')
-        logger.info(f'# of games: {total_games}')
-        logger.info(f'# of positions: {total_positions}')
-        logger.info(f'Coverage: {total_matches / total_positions * 100:.2f}%') # % of matched positions
-        logger.info(f'# of empty suggestions: {empty_suggestions}/{total_positions}') # number of positions where tactic did not suggest any move
-        logger.info(f'DCG = {dcg:.2f}')
-        logger.info(f'Average = {avg:.2f}')
+    if metrics['total_matches'] > 0:
+        print_metrics(metrics, log_level=logging.INFO, tactic_text=tactic_text)
     else:
-        logger.debug(f'Tactic: {tactic_text}')
-        logger.debug(f'# of games: {total_games}')
-        logger.debug(f'# of positions: {total_positions}')
-        logger.debug(f'Coverage: {total_matches / total_positions * 100:.2f}%') # % of matched positions
-        logger.debug(f'# of empty suggestions: {empty_suggestions}/{total_positions}') # number of positions where tactic did not suggest any move
-        logger.debug(f'DCG = {dcg:.2f}')
-        logger.debug(f'Average = {avg:.2f}')
+        print_metrics(metrics, log_level=logging.DEBUG, tactic_text=tactic_text)
 
-def pred2str(predicate):
-    "Converts a parsed predicate into its string representation"
-    return f'{predicate.id}({",".join(predicate.args)})'
-
-def parse_result_to_str(parse_result):
+def parse_result_to_str(parse_result) -> str:
     "Converts a parsed hypothesis space into a list of tactics represented by strings"
-    head_pred_str = pred2str(parse_result[0])
+
+    head_pred_str = to_pred(parse_result[0])
     body_preds = parse_result[1:]
     body_preds.sort(key=lambda pred: PRED_VALUE[pred.id])
-    body_preds_str = ','.join([pred2str(pred) for pred in body_preds])
+    body_preds_str = ','.join([to_pred(pred) for pred in body_preds])
     tactic_str = f'{head_pred_str}:-{body_preds_str}'
     logger.debug(f'Tactic str: {tactic_str}')
     return tactic_str
@@ -184,6 +171,8 @@ def main():
     parser.add_argument('-n', '--num_tactics', dest='tactics_limit', type=int, help='Number of tactics to analyze', default=100)
     parser.add_argument('-e', '--engine', dest='engine_path', default=STOCKFISH, help='Path to engine executable to use for calculating divergence')
     parser.add_argument('-p', '--position_db', dest='position_db', default=LICHESS_2013, help='Path to PGN file of positions to use for calculating divergence')
+    parser.add_argument('--num-games', dest='num_games', type=int, default=10, help='Number of games to use')
+    parser.add_argument('--pos-per-game', dest='pos_per_game', type=int, default=10, help='Number of positions to use per game')
     args = parser.parse_args()
 
     logging.basicConfig(level=getattr(logging, args.log_level))
@@ -198,23 +187,21 @@ def main():
     tactics_limit = args.tactics_limit
     engine_path = args.engine_path # for calculating divergence
     position_db = args.position_db
+    position_handle = open(position_db)
+    game_limit=args.num_games
+    pos_limit = args.pos_per_game
 
     tactics = parse_file(hspace_filename)
     tactics = sorted(tactics, key=lambda ele: len(ele) - 1)
     tactics = list(map(parse_result_to_str, tactics))
-    engine = chess.engine.SimpleEngine.popen_uci(engine_path)
     
-    for tactic in tqdm(tactics[:tactics_limit], desc='Tactics', unit='tactics'):
-        tactic_text = tactic
-        logger.debug(tactic_text)
-        try:
-            calc_metrics(tactic_text, engine, open(position_db), game_limit=10, pos_limit=10)
-        except chess.engine.EngineTerminatedError:
-            engine = chess.engine.SimpleEngine.popen_uci(engine_path)
-            # TODO: how to handle engine failure on a tactic? Need to restart it
-            tactics.append(tactic_text)
-            continue
-    engine.close()
+    with get_engine(engine_path) as engine:
+        prolog = Prolog()
+        prolog.consult(BK_FILE)
+        for tactic in tqdm(tactics[:tactics_limit], desc='Tactics', unit='tactics'):
+            tactic_text = tactic
+            logger.debug(tactic_text)
+            calc_metrics(prolog, tactic_text, engine, position_handle, game_limit=game_limit, pos_limit=pos_limit)
 
 if __name__ == '__main__':
     main()

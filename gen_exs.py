@@ -1,32 +1,14 @@
 import argparse
 import csv
-import os
 import random
-from contextlib import contextmanager
-from typing import List, Optional, TextIO, Union
-import code
-
-Seed = Optional[Union[int, float, str, bytes, bytearray]]
-PathLike = Union[str, bytes, os.PathLike]
+from typing import List, TextIO
 
 import chess
 import chess.engine
 import chess.pgn
 
-LICHESS_2013 = os.path.join('data', 'lichess_db_standard_rated_2013-01.pgn')
+from util import LICHESS_2013, STOCKFISH, PathLike, Seed, get_engine
 
-STOCKFISH = os.path.join('bin', 'stockfish_14_x64')
-MAIA_1100 = os.path.join(os.path.expanduser('~'), 'repos', 'lc0', 'build', 'release', 'lc0')
-
-@contextmanager
-def get_engine(engine_path: PathLike):
-    try:
-        engine = chess.engine.SimpleEngine.popen_uci(engine_path)
-        yield engine
-    except chess.engine.EngineError:
-        pass
-    finally:
-        engine.close()
 
 def sample_pgn(handle: TextIO, num_games: int=10, pos_per_game: int=10, seed: Seed=1) -> List[chess.Board]:
     "Sample positions from games in a PGN file"
@@ -35,7 +17,6 @@ def sample_pgn(handle: TextIO, num_games: int=10, pos_per_game: int=10, seed: Se
 
     # obtain num_game offsets from list of games
     offsets = []
-    # code.interact(local=locals())
     while _ := chess.pgn.read_headers(handle) is not None:
         offset = handle.tell()
         offsets.append(offset)

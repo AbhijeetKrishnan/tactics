@@ -127,9 +127,10 @@ def calc_metrics(tactic_text, engine, positions, game_limit=10, pos_limit=10):
             board = node.board()
             match, suggestions = tactic(tactic_text, board, limit=3)
             if match is None:
-                return
+                return # timeout occurred, exit the loop
             if match:
                 total_matches += 1
+                logger.debug(f'Suggestions: {suggestions}')
                 if suggestions:
                     evals = get_evals(engine, board, suggestions)
                     top_n_moves = get_top_n_moves(engine, len(suggestions), board)

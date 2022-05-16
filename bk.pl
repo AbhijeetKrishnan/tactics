@@ -219,3 +219,4 @@ fork(Pos, From, To) :-
     attacks(To, S1, NewPos),
     attacks(To, S2, NewPos),
     different_pos(S1, S2).
+

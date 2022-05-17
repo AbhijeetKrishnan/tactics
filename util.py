@@ -1,15 +1,14 @@
 import os
 from contextlib import contextmanager
-from typing import Optional, Union
+from typing import Generator, List, Optional, TextIO, Tuple, Union
 
 import chess
 import chess.engine
-
 from pyswip import Prolog
 from pyswip.prolog import PrologError
 
 Seed = Optional[Union[int, float, str, bytes, bytearray]]
-PathLike = Union[str, bytes, os.PathLike]
+PathLike = Union[str, List[str]]
 
 BK_FILE = os.path.join('bk.pl')
 
@@ -42,3 +41,23 @@ def fen_to_contents(fen: str) -> str:
             col = chess.square_file(square) + 1
             piece_str_list.append(f'contents({color}, {piece_name}, {col}, {row})')
     return f'[{", ".join(piece_str_list)}]'
+
+def games(pgn_file_handle: TextIO) -> Generator[Optional[chess.pgn.Game], None, None]:
+    "Generator to yield list of games in a PGN file"
+    while game := chess.pgn.read_game(pgn_file_handle):
+        yield game
+
+def get_evals(engine: chess.engine.SimpleEngine, board: chess.Board, suggestions: List[chess.Move]) -> List[Tuple[chess.engine.Score, chess.Move]]:
+    "Obtain engine evaluations for a list of moves in a given position"
+    evals = []
+    for move in suggestions:
+        analysis = engine.analyse(board, limit=chess.engine.Limit(depth=1), root_moves=[move])
+        if 'pv' in analysis: 
+            evals.append((analysis['score'].relative, analysis['pv'][0]))
+    return evals
+
+def get_top_n_moves(engine: chess.engine.SimpleEngine, board: chess.Board, n: int) -> List[Tuple[chess.engine.Score, chess.Move]]:
+    "Get the top-n engine-recommended moves for a given position"
+    analysis = engine.analyse(board, limit=chess.engine.Limit(depth=1), multipv=n)
+    top_n_moves = [(root['score'].relative, root['pv'][0]) for root in analysis]
+    return top_n_moves[:n]

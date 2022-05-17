@@ -1,6 +1,7 @@
 import argparse
 import logging
 import math
+from collections.abc import Callable
 from typing import List, Optional, TextIO, Tuple
 
 import chess
@@ -10,9 +11,9 @@ from pyswip import Prolog
 from pyswip.prolog import PrologError
 from tqdm import tqdm
 
-from parser import parse_file, to_pred
+from prolog_parser import parse_file, to_pred
 from util import (BK_FILE, LICHESS_2013, MAIA_1100, STOCKFISH, fen_to_contents,
-                  get_engine)
+                  games, get_engine, get_evals, get_top_n_moves)
 
 # TODO: brainstorm how to add this info in the bias file
 PRED_VALUE = {
@@ -28,43 +29,17 @@ PRED_VALUE = {
 logger = logging.getLogger(__name__)
 logger.propagate = False # https://stackoverflow.com/a/2267567
 
-def games(pgn_file_handle: TextIO):
-    while game := chess.pgn.read_game(pgn_file_handle):
-        yield game
-
-def get_evals(engine: chess.engine.SimpleEngine, board: chess.Board, suggestions: List[chess.Move]) -> List[Tuple[float, chess.Move]]:
-    evals = []
-    for move in suggestions:
-        analysis = engine.analyse(board, limit=chess.engine.Limit(depth=1), root_moves=[move])
-        if 'pv' in analysis: 
-            evals.append((analysis['score'].relative, analysis['pv'][0]))
-    return evals
-
-def evaluate(evaluated_suggestions: List[Tuple[float, chess.Move]], top_moves: List[chess.Move]) -> float:
-    dcg = 0
+def evaluate(evaluated_suggestions: List[Tuple[chess.engine.Score, chess.Move]], top_moves: List[Tuple[chess.engine.Score, chess.Move]], metric_fn: Callable[[int, float], float], mate_score: int=2000) -> float:
+    "Calculate a metric by comparing a given list of evaluated moves to the top recommended moves"
+    metric: float = 0
     for idx, (evaluated_move, top_move) in enumerate(zip(evaluated_suggestions, top_moves)):
         score, move = evaluated_move
-        eval = score.score(mate_score=2000)
+        eval = score.score(mate_score=mate_score)
         score_top, move_top = top_move
-        top_eval = score_top.score(mate_score=2000)
+        top_eval = score_top.score(mate_score=mate_score)
         error = abs(top_eval - eval)
-        dcg += error / math.log2(1 + (idx + 1))
-    return dcg
-
-def evaluate_avg(evaluated_suggestions: List[Tuple[float, chess.Move]], top_moves: List[chess.Move]) -> float:
-    total = 0
-    for idx, (evaluated_move, top_move) in enumerate(zip(evaluated_suggestions, top_moves)):
-        score, move = evaluated_move
-        eval = score.score(mate_score=2000)
-        score_top, move_top = top_move
-        top_eval = score_top.score(mate_score=2000)
-        total += abs(top_eval - eval)
-    return total / len(top_moves)
-
-def get_top_n_moves(engine: chess.engine.SimpleEngine, n: int, board: chess.Board) -> List[Tuple[float, chess.Move]]:
-    analysis = engine.analyse(board, limit=chess.engine.Limit(depth=1), multipv=n)
-    top_n_moves = [(root['score'].relative, root['pv'][0]) for root in analysis]
-    return top_n_moves[:n]
+        metric = metric_fn(idx, error)
+    return metric
 
 def tactic(prolog, text: str, board: chess.Board, limit: int=3, time_limit_sec: int=5) -> Tuple[Optional[bool], Optional[List[chess.Move]]]:
     "Given the text of a Prolog-based tactic, and a position, check whether the tactic matched in the given position or and if so, what were the suggested moves"
@@ -98,8 +73,7 @@ def tactic(prolog, text: str, board: chess.Board, limit: int=3, time_limit_sec: 
             to_sq = chess.parse_square(suggestion['To'])
             return chess.Move(from_sq, to_sq)
         suggestions = list(map(suggestion_to_move, results))
-    prolog.retract(text)
-    prolog.retractall('legal_move(_, _, _)')
+
     return match, suggestions
 
 def print_metrics(metrics: dict, log_level=logging.INFO, **kwargs) -> None:
@@ -117,10 +91,13 @@ def calc_metrics(prolog, tactic_text: str, engine: chess.engine.SimpleEngine, pg
         'total_games': 0,  # total number of games
         'total_positions': 0, # total number of positions (across all games)
         'total_matches': 0,
-        'dcg': 0,
-        'avg': 0,
+        'dcg': 0.0,
+        'avg': 0.0,
         'empty_suggestions': 0
     }
+
+    dcg_fn = lambda idx, error: error / math.log2(1 + (idx + 1))
+    avg_fn = lambda idx, error: error
 
     for game in tqdm(games(pgn_file_handle), total=game_limit * pos_limit, desc='Positions', unit='positions', leave=False):
         curr_positions = 0
@@ -134,9 +111,9 @@ def calc_metrics(prolog, tactic_text: str, engine: chess.engine.SimpleEngine, pg
                 metrics['total_matches'] += 1
                 if suggestions:
                     evals = get_evals(engine, board, suggestions)
-                    top_n_moves = get_top_n_moves(engine, len(suggestions), board)
-                    metrics['dcg'] += evaluate(evals, top_n_moves)
-                    metrics['avg'] += evaluate_avg(evals, top_n_moves)
+                    top_n_moves = get_top_n_moves(engine, board, len(suggestions))
+                    metrics['dcg'] += evaluate(evals, top_n_moves, dcg_fn)
+                    metrics['avg'] += evaluate(evals, top_n_moves, avg_fn)
                 else:
                     metrics['empty_suggestions'] += 1
             curr_positions += 1
@@ -166,6 +143,7 @@ def parse_result_to_str(parse_result) -> str:
     return tactic_str
 
 def main():
+    # Create argument parser
     parser = argparse.ArgumentParser(description='Calculate metrics for a set of chess tactics')
     parser.add_argument('tactics_file', type=str, help='file containing list of tactics')
     parser.add_argument('--log', dest='log_level', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'], help='Set the logging level', default='INFO')
@@ -176,6 +154,7 @@ def main():
     parser.add_argument('--pos-per-game', dest='pos_per_game', type=int, default=10, help='Number of positions to use per game')
     args = parser.parse_args()
 
+    # Create logger
     logging.basicConfig(level=getattr(logging, args.log_level))
     logger = logging.getLogger(__name__)
     fmt = logging.Formatter('[%(levelname)s] [%(asctime)s] %(funcName)s:%(lineno)d - %(message)s')
@@ -184,22 +163,25 @@ def main():
     hdlr.setLevel(logging.DEBUG)
     logger.addHandler(hdlr)
 
+    # Unpack cmdline arguments
     hspace_filename = args.tactics_file
     tactics_limit = args.tactics_limit
     engine_path = args.engine_path # for calculating divergence
     position_db = args.position_db
-    position_handle = open(position_db)
+    position_handle = open(position_db) # TODO: pass file handle or filename as param?
     game_limit=args.num_games
     pos_limit = args.pos_per_game
 
+    # Process tactics file
     tactics = parse_file(hspace_filename)
     tactics = sorted(tactics, key=lambda ele: len(ele) - 1)
     tactics = list(map(parse_result_to_str, tactics))
     
+    # Calculate metrics for each tactic
     with get_engine(engine_path) as engine:
-        prolog = Prolog()
-        prolog.consult(BK_FILE)
         for tactic in tqdm(tactics[:tactics_limit], desc='Tactics', unit='tactics'):
+            prolog = Prolog()
+            prolog.consult(BK_FILE)
             tactic_text = tactic
             logger.debug(tactic_text)
             success = calc_metrics(prolog, tactic_text, engine, position_handle, game_limit=game_limit, pos_limit=pos_limit)

@@ -7,7 +7,7 @@ import chess
 import chess.engine
 import chess.pgn
 
-from util import LICHESS_2013, STOCKFISH, PathLike, Seed, get_engine
+from util import LICHESS_2013, STOCKFISH, PathLike, Seed, get_engine, get_top_n_moves
 
 
 def sample_pgn(handle: TextIO, num_games: int=10, pos_per_game: int=10, seed: Seed=1) -> List[chess.Board]:
@@ -27,21 +27,16 @@ def sample_pgn(handle: TextIO, num_games: int=10, pos_per_game: int=10, seed: Se
         handle.seek(offset)
         game = chess.pgn.read_game(handle)
         positions = []
-        node = game.next()
-        while not node.is_end():
-            board = node.board()
-            positions.append(board)
-            node = node.next()
-        sampled_positions = random.sample(positions, pos_per_game)
-        result.extend(sampled_positions)
+        if game:
+            node = game.next()
+            while node and not node.is_end():
+                board = node.board()
+                positions.append(board)
+                node = node.next()
+            sampled_positions = random.sample(positions, pos_per_game)
+            result.extend(sampled_positions)
 
     return result
-
-def get_engine_moves(engine: chess.engine.SimpleEngine, position: chess.Board, pos_limit: int=3) -> List[chess.Move]:
-    "Get engine move recommendations for a given position"
-    analysis = engine.analyse(position, limit=chess.engine.Limit(depth=1), multipv=pos_limit)
-    top_n_moves = [(root['score'].relative, root['pv'][0]) for root in analysis][:pos_limit]
-    return top_n_moves
 
 def gen_exs(exs_pgn_path: PathLike, engine_path: PathLike, num_games: int=10, pos_per_game: int=10, neg_to_pos_ratio: int=3):
     
@@ -50,7 +45,7 @@ def gen_exs(exs_pgn_path: PathLike, engine_path: PathLike, num_games: int=10, po
     
     with get_engine(engine_path) as engine:
         for position in sample_positions:
-            moves = get_engine_moves(engine, position, neg_to_pos_ratio + 1)
+            moves = get_top_n_moves(engine, position, neg_to_pos_ratio + 1)
             if not moves:
                 continue
             _, top_move = moves[0]

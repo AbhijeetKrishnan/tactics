@@ -1,32 +1,14 @@
 import argparse
 import csv
-import os
 import random
-from contextlib import contextmanager
-from typing import List, Optional, TextIO, Union
-import code
-
-Seed = Optional[Union[int, float, str, bytes, bytearray]]
-PathLike = Union[str, bytes, os.PathLike]
+from typing import List, TextIO
 
 import chess
 import chess.engine
 import chess.pgn
 
-LICHESS_2013 = os.path.join('data', 'lichess_db_standard_rated_2013-01.pgn')
+from util import LICHESS_2013, STOCKFISH, PathLike, Seed, get_engine, get_top_n_moves
 
-STOCKFISH = os.path.join('bin', 'stockfish_14_x64')
-MAIA_1100 = os.path.join(os.path.expanduser('~'), 'repos', 'lc0', 'build', 'release', 'lc0')
-
-@contextmanager
-def get_engine(engine_path: PathLike):
-    try:
-        engine = chess.engine.SimpleEngine.popen_uci(engine_path)
-        yield engine
-    except chess.engine.EngineError:
-        pass
-    finally:
-        engine.close()
 
 def sample_pgn(handle: TextIO, num_games: int=10, pos_per_game: int=10, seed: Seed=1) -> List[chess.Board]:
     "Sample positions from games in a PGN file"
@@ -35,7 +17,6 @@ def sample_pgn(handle: TextIO, num_games: int=10, pos_per_game: int=10, seed: Se
 
     # obtain num_game offsets from list of games
     offsets = []
-    # code.interact(local=locals())
     while _ := chess.pgn.read_headers(handle) is not None:
         offset = handle.tell()
         offsets.append(offset)
@@ -46,21 +27,16 @@ def sample_pgn(handle: TextIO, num_games: int=10, pos_per_game: int=10, seed: Se
         handle.seek(offset)
         game = chess.pgn.read_game(handle)
         positions = []
-        node = game.next()
-        while not node.is_end():
-            board = node.board()
-            positions.append(board)
-            node = node.next()
-        sampled_positions = random.sample(positions, pos_per_game)
-        result.extend(sampled_positions)
+        if game:
+            node = game.next()
+            while node and not node.is_end():
+                board = node.board()
+                positions.append(board)
+                node = node.next()
+            sampled_positions = random.sample(positions, pos_per_game)
+            result.extend(sampled_positions)
 
     return result
-
-def get_engine_moves(engine: chess.engine.SimpleEngine, position: chess.Board, pos_limit: int=3) -> List[chess.Move]:
-    "Get engine move recommendations for a given position"
-    analysis = engine.analyse(position, limit=chess.engine.Limit(depth=1), multipv=pos_limit)
-    top_n_moves = [(root['score'].relative, root['pv'][0]) for root in analysis][:pos_limit]
-    return top_n_moves
 
 def gen_exs(exs_pgn_path: PathLike, engine_path: PathLike, num_games: int=10, pos_per_game: int=10, neg_to_pos_ratio: int=3):
     
@@ -69,7 +45,7 @@ def gen_exs(exs_pgn_path: PathLike, engine_path: PathLike, num_games: int=10, po
     
     with get_engine(engine_path) as engine:
         for position in sample_positions:
-            moves = get_engine_moves(engine, position, neg_to_pos_ratio + 1)
+            moves = get_top_n_moves(engine, position, neg_to_pos_ratio + 1)
             if not moves:
                 continue
             _, top_move = moves[0]

@@ -89,31 +89,33 @@ def calc_metrics(prolog, tactic_text: str, engine: chess.engine.SimpleEngine, pg
     dcg_fn = lambda idx, error: error / math.log2(1 + (idx + 1))
     avg_fn = lambda _, error: error
 
-    for game in tqdm(games(pgn_file_handle), total=game_limit * pos_limit, desc='Positions', unit='positions', leave=False):
-        metrics['total_games'] += 1
-        curr_positions = 0
-        node = game.next() # skip start position
-        while not node.is_end():
-            board = node.board()
-            match, suggestions = get_tactic_match(prolog, tactic_text, board, limit=3)
-            if match is None:
-                return False
-            metrics['total_positions'] += 1 # don't include a position for which we don't have a result
-            if match:
-                metrics['total_matches'] += 1
-                if suggestions:
-                    evals = get_evals(engine, board, suggestions)
-                    top_n_moves = get_top_n_moves(engine, board, len(suggestions))
-                    metrics['dcg'] += evaluate(evals, top_n_moves, dcg_fn)
-                    metrics['avg'] += evaluate(evals, top_n_moves, avg_fn)
-                else:
-                    metrics['empty_suggestions'] += 1
-            curr_positions += 1
-            if pos_limit and curr_positions >= pos_limit:
+    with tqdm(total=game_limit * pos_limit, desc='Positions', unit='positions', leave=False) as pos_progress_bar:
+        for game in games(pgn_file_handle):
+            metrics['total_games'] += 1
+            curr_positions = 0
+            node = game.next() # skip start position
+            while not node.is_end():
+                board = node.board()
+                match, suggestions = get_tactic_match(prolog, tactic_text, board, limit=3)
+                if match is None:
+                    return False
+                metrics['total_positions'] += 1 # don't include a position for which we don't have a result
+                pos_progress_bar.update(1)
+                if match:
+                    metrics['total_matches'] += 1
+                    if suggestions:
+                        evals = get_evals(engine, board, suggestions)
+                        top_n_moves = get_top_n_moves(engine, board, len(suggestions))
+                        metrics['dcg'] += evaluate(evals, top_n_moves, dcg_fn)
+                        metrics['avg'] += evaluate(evals, top_n_moves, avg_fn)
+                    else:
+                        metrics['empty_suggestions'] += 1
+                curr_positions += 1
+                if pos_limit and curr_positions >= pos_limit:
+                    break
+                node = node.next()
+            if game_limit and metrics['total_games'] >= game_limit:
                 break
-            node = node.next()
-        if game_limit and metrics['total_games'] >= game_limit:
-            break
     
     if metrics['total_matches'] > 0:
         print_metrics(metrics, log_level=logging.INFO, tactic_text=tactic_text)
@@ -150,33 +152,30 @@ def main():
     position_handle = open(position_db) # TODO: pass file handle or filename as param?
     game_limit=args.num_games
     pos_limit = args.pos_per_game
-
-    # Process tactics file
-    # tactics = parse_file(hspace_filename)
-    # tactics = sorted(tactics, key=lambda ele: len(ele) - 1)
-    # tactics = list(map(parse_result_to_str, tactics))
     
     # Calculate metrics for each tactic
     prolog_parser = create_parser()
     with get_engine(engine_path) as engine:
         with open(hspace_filename) as hspace_handle:
             tactics_seen = 0
-            for line in tqdm(hspace_handle, total=tactics_limit, desc='Tactics', unit='tactics'):
-                logger.debug(line)
-                if line[0] == '%': # skip comments
-                    continue
-                tactic = prolog_parser.parse_string(line)
-                logger.debug(tactic)
-                tactic_text = parse_result_to_str(tactic)
-                logger.debug(tactic_text)
-                
-                prolog = Prolog()
-                prolog.consult(BK_FILE)
+            with tqdm(total=tactics_limit, desc='Tactics', unit='tactics') as tactics_progress_bar:
+                for line in hspace_handle:
+                    logger.debug(line)
+                    if line[0] == '%': # skip comments
+                        continue
+                    tactic = prolog_parser.parse_string(line)
+                    logger.debug(tactic)
+                    tactic_text = parse_result_to_str(tactic)
+                    logger.debug(tactic_text)
+                    
+                    prolog = Prolog()
+                    prolog.consult(BK_FILE)
 
-                success = calc_metrics(prolog, tactic_text, engine, position_handle, game_limit=game_limit, pos_limit=pos_limit)
-                tactics_seen += 1
-                if tactics_seen >= tactics_limit:
-                    break
+                    success = calc_metrics(prolog, tactic_text, engine, position_handle, game_limit=game_limit, pos_limit=pos_limit)
+                    tactics_seen += 1
+                    tactics_progress_bar.update(1)
+                    if tactics_seen >= tactics_limit:
+                        break
     logger.info(f'% Calculated metrics for {tactics_seen} tactics')
     position_handle.close()
 

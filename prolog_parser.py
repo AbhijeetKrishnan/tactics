@@ -2,6 +2,17 @@
 
 import pyparsing as pp
 
+# TODO: brainstorm how to add this info in the bias file
+PRED_VALUE = {
+    'make_move': 0,
+    'legal_move': 0,
+    'attacks': 1,
+    'behind': 1,
+    'piece_at': 2,
+    'different_pos': 3,
+    'other_side': 3
+}
+
 def create_parser():
     predicate = pp.Word(pp.alphas + '_').set_results_name('id')
 
@@ -27,13 +38,7 @@ def create_parser():
     rule = (pp.Group(fact) + pp.Suppress(pp.Literal(':-')) + pp.delimited_list(pp.Group(fact), delim=',') + pp.Suppress('.'))
 
     prolog_parser = pp.OneOrMore(pp.Group(rule)).ignore(comment)
-    return prolog_parser
-
-prolog = create_parser()
-
-def parse_file(filename):
-    result = prolog.parse_file(filename, parse_all=True)
-    return result
+    return rule
 
 def to_pred_str(predicate) -> str:
     return f'{predicate.id}/{len(predicate.args)}'
@@ -45,6 +50,16 @@ def to_pred(predicate) -> str:
 
 def get_pred_str_list(results):
     return [to_pred_str(predicate) for predicate in results]
+
+def parse_result_to_str(parse_result) -> str:
+    "Converts a parsed hypothesis space into a list of tactics represented by strings"
+
+    head_pred_str = to_pred(parse_result[0])
+    body_preds = parse_result[1:]
+    body_preds.sort(key=lambda pred: PRED_VALUE[pred.id])
+    body_preds_str = ','.join([to_pred(pred) for pred in body_preds])
+    tactic_str = f'{head_pred_str}:-{body_preds_str}'
+    return tactic_str
 
 def get_all_unique_args(results):
     res = []
@@ -70,5 +85,5 @@ if __name__ == '__main__':
     print(result[2].args[1])
     # outputs ['7.0']
 
-    result = parse_file('examples/even/pos.pl')
+    result = prolog_sentences.parse_file('examples/even/pos.pl')
     print(result.dump())

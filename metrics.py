@@ -11,20 +11,10 @@ from pyswip import Prolog
 from pyswip.prolog import PrologError
 from tqdm import tqdm
 
-from prolog_parser import parse_file, to_pred
+from prolog_parser import create_parser, parse_result_to_str
 from util import (BK_FILE, LICHESS_2013, MAIA_1100, STOCKFISH, fen_to_contents,
                   games, get_engine, get_evals, get_top_n_moves)
 
-# TODO: brainstorm how to add this info in the bias file
-PRED_VALUE = {
-    'make_move': 0,
-    'legal_move': 0,
-    'attacks': 1,
-    'behind': 1,
-    'piece_at': 2,
-    'different_pos': 3,
-    'other_side': 3
-}
 
 logger = logging.getLogger(__name__)
 logger.propagate = False # https://stackoverflow.com/a/2267567
@@ -41,7 +31,7 @@ def evaluate(evaluated_suggestions: List[Tuple[chess.engine.Score, chess.Move]],
         metric = metric_fn(idx, error)
     return metric
 
-def tactic(prolog, text: str, board: chess.Board, limit: int=3, time_limit_sec: int=5) -> Tuple[Optional[bool], Optional[List[chess.Move]]]:
+def get_tactic_match(prolog, text: str, board: chess.Board, limit: int=3, time_limit_sec: int=5) -> Tuple[Optional[bool], Optional[List[chess.Move]]]:
     "Given the text of a Prolog-based tactic, and a position, check whether the tactic matched in the given position or and if so, what were the suggested moves"
     
     position = fen_to_contents(board.fen())
@@ -97,16 +87,18 @@ def calc_metrics(prolog, tactic_text: str, engine: chess.engine.SimpleEngine, pg
     }
 
     dcg_fn = lambda idx, error: error / math.log2(1 + (idx + 1))
-    avg_fn = lambda idx, error: error
+    avg_fn = lambda _, error: error
 
     for game in tqdm(games(pgn_file_handle), total=game_limit * pos_limit, desc='Positions', unit='positions', leave=False):
+        metrics['total_games'] += 1
         curr_positions = 0
         node = game.next() # skip start position
         while not node.is_end():
             board = node.board()
-            match, suggestions = tactic(prolog, tactic_text, board, limit=3)
+            match, suggestions = get_tactic_match(prolog, tactic_text, board, limit=3)
             if match is None:
                 return False
+            metrics['total_positions'] += 1 # don't include a position for which we don't have a result
             if match:
                 metrics['total_matches'] += 1
                 if suggestions:
@@ -117,11 +109,9 @@ def calc_metrics(prolog, tactic_text: str, engine: chess.engine.SimpleEngine, pg
                 else:
                     metrics['empty_suggestions'] += 1
             curr_positions += 1
-            metrics['total_positions'] += 1
             if pos_limit and curr_positions >= pos_limit:
                 break
             node = node.next()
-        metrics['total_games'] += 1
         if game_limit and metrics['total_games'] >= game_limit:
             break
     
@@ -130,17 +120,6 @@ def calc_metrics(prolog, tactic_text: str, engine: chess.engine.SimpleEngine, pg
     else:
         print_metrics(metrics, log_level=logging.DEBUG, tactic_text=tactic_text)
     return True
-
-def parse_result_to_str(parse_result) -> str:
-    "Converts a parsed hypothesis space into a list of tactics represented by strings"
-
-    head_pred_str = to_pred(parse_result[0])
-    body_preds = parse_result[1:]
-    body_preds.sort(key=lambda pred: PRED_VALUE[pred.id])
-    body_preds_str = ','.join([to_pred(pred) for pred in body_preds])
-    tactic_str = f'{head_pred_str}:-{body_preds_str}'
-    logger.debug(f'Tactic str: {tactic_str}')
-    return tactic_str
 
 def main():
     # Create argument parser
@@ -173,18 +152,33 @@ def main():
     pos_limit = args.pos_per_game
 
     # Process tactics file
-    tactics = parse_file(hspace_filename)
-    tactics = sorted(tactics, key=lambda ele: len(ele) - 1)
-    tactics = list(map(parse_result_to_str, tactics))
+    # tactics = parse_file(hspace_filename)
+    # tactics = sorted(tactics, key=lambda ele: len(ele) - 1)
+    # tactics = list(map(parse_result_to_str, tactics))
     
     # Calculate metrics for each tactic
+    prolog_parser = create_parser()
     with get_engine(engine_path) as engine:
-        for tactic in tqdm(tactics[:tactics_limit], desc='Tactics', unit='tactics'):
-            prolog = Prolog()
-            prolog.consult(BK_FILE)
-            tactic_text = tactic
-            logger.debug(tactic_text)
-            success = calc_metrics(prolog, tactic_text, engine, position_handle, game_limit=game_limit, pos_limit=pos_limit)
+        with open(hspace_filename) as hspace_handle:
+            tactics_seen = 0
+            for line in tqdm(hspace_handle, total=tactics_limit, desc='Tactics', unit='tactics'):
+                logger.debug(line)
+                if line[0] == '%': # skip comments
+                    continue
+                tactic = prolog_parser.parse_string(line)
+                logger.debug(tactic)
+                tactic_text = parse_result_to_str(tactic)
+                logger.debug(tactic_text)
+                
+                prolog = Prolog()
+                prolog.consult(BK_FILE)
+
+                success = calc_metrics(prolog, tactic_text, engine, position_handle, game_limit=game_limit, pos_limit=pos_limit)
+                tactics_seen += 1
+                if tactics_seen >= tactics_limit:
+                    break
+    logger.info(f'% Calculated metrics for {tactics_seen} tactics')
+    position_handle.close()
 
 if __name__ == '__main__':
     main()

@@ -16,7 +16,7 @@ BK_FILE = os.path.join('bk.pl')
 LICHESS_2013 = os.path.join('data', 'lichess_db_standard_rated_2013-01.pgn')
 
 STOCKFISH = os.path.join('bin', 'stockfish_14_x64')
-MAIA_1100 = os.path.join(os.path.expanduser('~'), 'repos', 'lc0', 'build', 'release', 'lc0')
+MAIA_1100 = os.path.join('bin' 'lc0', 'build', 'release', 'lc0')
 
 @contextmanager
 def get_engine(engine_path: PathLike):

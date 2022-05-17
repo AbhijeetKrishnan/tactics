@@ -112,7 +112,7 @@ def print_metrics(metrics: dict, log_level=logging.INFO, **kwargs) -> None:
     logger.log(log_level, f"DCG = {metrics['dcg']:.2f}")
     logger.log(log_level, f"Average = {metrics['avg']:.2f}")
 
-def calc_metrics(prolog, tactic_text: str, engine: chess.engine.SimpleEngine, pgn_file_handle: TextIO, game_limit: int=10, pos_limit: int=10) -> None:
+def calc_metrics(prolog, tactic_text: str, engine: chess.engine.SimpleEngine, pgn_file_handle: TextIO, game_limit: int=10, pos_limit: int=10) -> bool:
     metrics = {
         'total_games': 0,  # total number of games
         'total_positions': 0, # total number of positions (across all games)
@@ -129,7 +129,7 @@ def calc_metrics(prolog, tactic_text: str, engine: chess.engine.SimpleEngine, pg
             board = node.board()
             match, suggestions = tactic(prolog, tactic_text, board, limit=3)
             if match is None:
-                return
+                return False
             if match:
                 metrics['total_matches'] += 1
                 if suggestions:
@@ -152,6 +152,7 @@ def calc_metrics(prolog, tactic_text: str, engine: chess.engine.SimpleEngine, pg
         print_metrics(metrics, log_level=logging.INFO, tactic_text=tactic_text)
     else:
         print_metrics(metrics, log_level=logging.DEBUG, tactic_text=tactic_text)
+    return True
 
 def parse_result_to_str(parse_result) -> str:
     "Converts a parsed hypothesis space into a list of tactics represented by strings"
@@ -201,7 +202,7 @@ def main():
         for tactic in tqdm(tactics[:tactics_limit], desc='Tactics', unit='tactics'):
             tactic_text = tactic
             logger.debug(tactic_text)
-            calc_metrics(prolog, tactic_text, engine, position_handle, game_limit=game_limit, pos_limit=pos_limit)
+            success = calc_metrics(prolog, tactic_text, engine, position_handle, game_limit=game_limit, pos_limit=pos_limit)
 
 if __name__ == '__main__':
     main()

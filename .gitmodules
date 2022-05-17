@@ -1,0 +1,6 @@
+[submodule "bin/maia-chess"]
+	path = bin/maia-chess
+	url = git@github.com:CSSLab/maia-chess.git
+[submodule "bin/lc0"]
+	path = bin/lc0
+	url = git@github.com:LeelaChessZero/lc0.git

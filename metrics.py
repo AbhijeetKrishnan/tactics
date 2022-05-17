@@ -101,6 +101,7 @@ def calc_metrics(prolog, tactic_text: str, engine: chess.engine.SimpleEngine, pg
                     return False
                 metrics['total_positions'] += 1 # don't include a position for which we don't have a result
                 pos_progress_bar.update(1)
+                logger.debug(f'Suggestions: {suggestions}')
                 if match:
                     metrics['total_matches'] += 1
                     if suggestions:
@@ -108,8 +109,9 @@ def calc_metrics(prolog, tactic_text: str, engine: chess.engine.SimpleEngine, pg
                         top_n_moves = get_top_n_moves(engine, board, len(suggestions))
                         metrics['dcg'] += evaluate(evals, top_n_moves, dcg_fn)
                         metrics['avg'] += evaluate(evals, top_n_moves, avg_fn)
-                    else:
-                        metrics['empty_suggestions'] += 1
+                else:
+                    logger.debug(f'Updated empty suggestions')
+                    metrics['empty_suggestions'] += 1
                 curr_positions += 1
                 if pos_limit and curr_positions >= pos_limit:
                     break

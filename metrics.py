@@ -63,7 +63,8 @@ def get_tactic_match(prolog, text: str, board: chess.Board, limit: int=3, time_l
             to_sq = chess.parse_square(suggestion['To'])
             return chess.Move(from_sq, to_sq)
         suggestions = list(map(suggestion_to_move, results))
-
+    prolog.retract(text)
+    prolog.retractall('legal_move(_, _, _)')
     return match, suggestions
 
 def print_metrics(metrics: dict, log_level=logging.INFO, **kwargs) -> None:
@@ -72,6 +73,7 @@ def print_metrics(metrics: dict, log_level=logging.INFO, **kwargs) -> None:
     logger.log(log_level, f"# of games: {metrics['total_games']}")
     logger.log(log_level, f"# of positions: {metrics['total_positions']}")
     logger.log(log_level, f"Coverage: {metrics['total_matches'] / metrics['total_positions'] * 100:.2f}%") # % of matched positions
+    logger.log(log_level, f"Average number of suggestions per matched position: {metrics['num_suggestions'] / metrics['total_matches']:.2f}")
     logger.log(log_level, f"# of empty suggestions: {metrics['empty_suggestions']}/{metrics['total_positions']}") # number of positions where tactic did not suggest any move
     logger.log(log_level, f"DCG = {metrics['dcg']:.2f}")
     logger.log(log_level, f"Average = {metrics['avg']:.2f}")
@@ -83,7 +85,8 @@ def calc_metrics(prolog, tactic_text: str, engine: chess.engine.SimpleEngine, pg
         'total_matches': 0,
         'dcg': 0.0,
         'avg': 0.0,
-        'empty_suggestions': 0
+        'empty_suggestions': 0,
+        'num_suggestions': 0
     }
 
     dcg_fn = lambda idx, error: error / math.log2(1 + (idx + 1))
@@ -109,6 +112,7 @@ def calc_metrics(prolog, tactic_text: str, engine: chess.engine.SimpleEngine, pg
                         top_n_moves = get_top_n_moves(engine, board, len(suggestions))
                         metrics['dcg'] += evaluate(evals, top_n_moves, dcg_fn)
                         metrics['avg'] += evaluate(evals, top_n_moves, avg_fn)
+                        metrics['num_suggestions'] += len(suggestions)
                 else:
                     logger.debug(f'Updated empty suggestions')
                     metrics['empty_suggestions'] += 1
@@ -157,6 +161,8 @@ def main():
     
     # Calculate metrics for each tactic
     prolog_parser = create_parser()
+    prolog = Prolog()
+    prolog.consult(BK_FILE)
     with get_engine(engine_path) as engine:
         with open(hspace_filename) as hspace_handle:
             tactics_seen = 0
@@ -170,8 +176,7 @@ def main():
                     tactic_text = parse_result_to_str(tactic)
                     logger.debug(tactic_text)
                     
-                    prolog = Prolog()
-                    prolog.consult(BK_FILE)
+                    
 
                     success = calc_metrics(prolog, tactic_text, engine, position_handle, game_limit=game_limit, pos_limit=pos_limit)
                     tactics_seen += 1

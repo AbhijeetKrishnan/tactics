@@ -10,13 +10,13 @@ import chess.engine
 import chess.pgn
 import pyparsing
 from pyswip import Prolog
-from pyswip.prolog import PrologError
+from pyswip.prolog import Prolog, PrologError
 from tqdm import tqdm
 
 from prolog_parser import create_parser, parse_result_to_str
-from util import (BK_FILE, LICHESS_2013, MAIA_1100, STOCKFISH, fen_to_contents,
-                  get_engine, get_evals, get_top_n_moves, positions_list,
-                  positions_pgn)
+from util import (LICHESS_2013, MAIA_1100, STOCKFISH, fen_to_contents,
+                  get_engine, get_evals, get_prolog, get_top_n_moves,
+                  positions_list, positions_pgn)
 
 logger = logging.getLogger(__name__)
 logger.propagate = False # https://stackoverflow.com/a/2267567
@@ -33,24 +33,24 @@ def evaluate(evaluated_suggestions: List[Tuple[chess.engine.Score, chess.Move]],
         metric = metric_fn(idx, error)
     return metric
 
-def get_tactic_match(prolog, text: str, board: chess.Board, limit: int=3, time_limit_sec: int=5) -> Tuple[Optional[bool], Optional[List[chess.Move]]]:
+def get_tactic_match(prolog: Prolog, text: str, board: chess.Board, limit: int=3, time_limit_sec: int=5) -> Tuple[Optional[bool], Optional[List[chess.Move]]]:
     "Given the text of a Prolog-based tactic, and a position, check whether the tactic matched in the given position or and if so, what were the suggested moves"
     
     position = fen_to_contents(board.fen())
     
     prolog.assertz(text)
     # assert legal moves based on current position
-    for move in board.legal_moves:
-        from_sq = chess.square_name(move.from_square)
-        to_sq = chess.square_name(move.to_square)
-        legal_move_pred = f'legal_move({from_sq}, {to_sq}, {position})'
-        logger.debug(f'Legal move predicate: {legal_move_pred}')
-        prolog.assertz(legal_move_pred)
+    # for move in board.legal_moves:
+    #     from_sq = chess.square_name(move.from_square)
+    #     to_sq = chess.square_name(move.to_square)
+    #     legal_move_pred = f'legal_move({from_sq}, {to_sq}, {position})'
+    #     logger.debug(f'Legal move predicate: {legal_move_pred}')
+    #     prolog.assertz(legal_move_pred)
 
     query = f"f({position}, From, To)"
     logger.debug(f'Launching query: {query} with time limit: {time_limit_sec}s')
     try:
-        results = list(prolog.query(f'call_with_time_limit({time_limit_sec}, {query})', maxresult=limit))
+        results = list(prolog.query(f'{query}', maxresult=limit))
         logger.debug(f'Results: {results}')
     except PrologError:
         logger.warning(f'timeout after {time_limit_sec}s on tactic {text}')
@@ -66,7 +66,6 @@ def get_tactic_match(prolog, text: str, board: chess.Board, limit: int=3, time_l
             return chess.Move(from_sq, to_sq)
         suggestions = list(map(suggestion_to_move, results))
     prolog.retract(text)
-    prolog.retractall('legal_move(_, _, _)')
     return match, suggestions
 
 def print_metrics(metrics: dict, log_level=logging.INFO, **kwargs) -> None:
@@ -74,6 +73,7 @@ def print_metrics(metrics: dict, log_level=logging.INFO, **kwargs) -> None:
     logger.log(log_level, f"Tactic: {tactic_text}")
     logger.log(log_level, f"# of positions: {metrics['total_positions']}")
     logger.log(log_level, f"Coverage: {metrics['total_matches'] / metrics['total_positions'] * 100:.2f}%") # % of matched positions
+    logger.log(log_level, f"Total matches: {metrics['total_matches']}")
     if metrics['total_matches'] > 0:
         logger.log(log_level, f"Average number of suggestions per matched position: {metrics['num_suggestions'] / metrics['total_matches']:.2f}")
     logger.log(log_level, f"# of empty suggestions: {metrics['empty_suggestions']}/{metrics['total_positions']}") # number of positions where tactic did not suggest any move
@@ -166,8 +166,7 @@ def main():
     
     # Calculate metrics for each tactic
     prolog_parser = create_parser()
-    prolog = Prolog()
-    prolog.consult(BK_FILE)
+    prolog = get_prolog()
     metrics_list = []
     with get_engine(args.engine_path) as engine:
         with open(args.tactics_file) as hspace_handle:

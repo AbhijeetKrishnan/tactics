@@ -142,9 +142,18 @@ position(Pos) :-
     % how to indicate list of contents/4 predicates?
     is_list(Pos).
 
+turn(Side, Pos) :-
+    side(Side),
+    member(turn(Side), Pos).
+
+kingside_castle(Side, Pos) :-
+    member(kingside_castle(Side), Pos).
+queenside_castle(Side, Pos) :-
+    member(queenside_castle(Side), Pos).
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-:- dynamic legal_move/3.
+% :- dynamic legal_move/3.
 
 attacks(From,To,Pos) :-
     to_coords(From, FromX, FromY),

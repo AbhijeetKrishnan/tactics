@@ -67,11 +67,11 @@ def fen_to_contents(fen: str) -> str:
 
     return f'[{", ".join(board_str_list)}]'
 
-def games(pgn_file_handle: TextIO) -> Generator[Optional[chess.pgn.Game], None, None]:
+def games(pgn_filename: PathLike) -> Generator[Optional[chess.pgn.Game], None, None]:
     "Generator to yield list of games in a PGN file"
-
-    while game := chess.pgn.read_game(pgn_file_handle):
-        yield game
+    with open(pgn_filename) as pgn_file_handle:
+        while game := chess.pgn.read_game(pgn_file_handle):
+            yield game
 
 def get_evals(engine: chess.engine.SimpleEngine, board: chess.Board, suggestions: List[chess.Move]) -> List[Tuple[chess.engine.Score, chess.Move]]:
     "Obtain engine evaluations for a list of moves in a given position"
@@ -111,30 +111,23 @@ def convert_pos_to_board(pos: List[pyswip.easy.Functor]) -> chess.Board:
     board = chess.Board(None)
     for predicate in pos:
         predicate_name = predicate.name.value
+        side_str = predicate.args[0].value
+        side = convert_side(side_str)
         if predicate_name == 'contents':
-            side_str = predicate.args[0].value
             piece_str = predicate.args[1].value
-            #code.interact(local=locals())
             file = predicate.args[2]
             rank = predicate.args[3]
-
-            piece = chess.Piece(parse_piece(piece_str), convert_side(side_str))
+            piece = chess.Piece(parse_piece(piece_str), side)
             square = chess.square(file - 1, rank - 1)
             board.set_piece_at(square, piece)
         elif predicate_name == 'turn':
-            side_str = predicate.args[0].value
-            side = convert_side(side_str)
             board.turn = side
         elif predicate_name == 'kingside_castle':
-            side_str = predicate.args[0].value
-            side = convert_side(side_str)
             if side == chess.WHITE:
                 board.castling_rights |= chess.BB_H1
             else:
                 board.castling_rights |= chess.BB_H8
         elif predicate_name == 'queenside_castle':
-            side_str = predicate.args[0].value
-            side = convert_side(side_str)
             if side == chess.WHITE:
                 board.castling_rights |= chess.BB_A1
             else:
@@ -183,5 +176,5 @@ def get_prolog() -> pyswip.prolog.Prolog:
 if __name__ == '__main__':
     prolog = get_prolog()
     contents = '[contents(white, rook, 1, 1), contents(white, knight, 2, 1), contents(white, bishop, 3, 1), contents(white, queen, 4, 1), contents(white, king, 5, 1), contents(white, bishop, 6, 1), contents(white, knight, 7, 1), contents(white, rook, 8, 1), contents(white, pawn, 1, 2), contents(white, pawn, 2, 2), contents(white, pawn, 3, 2), contents(white, pawn, 4, 2), contents(white, pawn, 6, 2), contents(white, pawn, 7, 2), contents(white, pawn, 8, 2), contents(white, pawn, 5, 4), contents(black, pawn, 5, 5), contents(black, pawn, 1, 7), contents(black, pawn, 2, 7), contents(black, pawn, 3, 7), contents(black, pawn, 4, 7), contents(black, pawn, 6, 7), contents(black, pawn, 7, 7), contents(black, pawn, 8, 7), contents(black, rook, 1, 8), contents(black, knight, 2, 8), contents(black, bishop, 3, 8), contents(black, queen, 4, 8), contents(black, king, 5, 8), contents(black, bishop, 6, 8), contents(black, knight, 7, 8), contents(black, rook, 8, 8), turn(white), kingside_castle(white), queenside_castle(white), kingside_castle(black), queenside_castle(black)]'
-    r = prolog.query(f'legal_move(From, To, {contents})', maxresult=100)
+    r = prolog.query(f'legal_move(From, To, {contents})', maxresult=5)
     print(list(r))

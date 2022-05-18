@@ -12,8 +12,9 @@ from pyswip.prolog import Prolog, PrologError
 from tqdm import tqdm
 
 from prolog_parser import create_parser, parse_result_to_str
-from util import (LICHESS_2013, MAIA_1100, STOCKFISH, fen_to_contents,
-                  games, get_engine, get_evals, get_prolog, get_top_n_moves)
+from util import (LICHESS_2013, MAIA_1100, STOCKFISH, PathLike,
+                  fen_to_contents, games, get_engine, get_evals, get_prolog,
+                  get_top_n_moves)
 
 logger = logging.getLogger(__name__)
 logger.propagate = False # https://stackoverflow.com/a/2267567
@@ -47,7 +48,7 @@ def get_tactic_match(prolog: Prolog, text: str, board: chess.Board, limit: int=3
     query = f"f({position}, From, To)"
     logger.debug(f'Launching query: {query} with time limit: {time_limit_sec}s')
     try:
-        results = list(prolog.query(f'call_with_time_limit({time_limit_sec}, {query})', maxresult=limit))
+        results = list(prolog.query(f'{query}', maxresult=limit))
         logger.debug(f'Results: {results}')
     except PrologError:
         logger.warning(f'timeout after {time_limit_sec}s on tactic {text}')
@@ -58,12 +59,11 @@ def get_tactic_match(prolog: Prolog, text: str, board: chess.Board, limit: int=3
         match = True
         # convert suggestions to chess.Moves
         def suggestion_to_move(suggestion):
-            from_sq = chess.parse_square(suggestion['From'])
-            to_sq = chess.parse_square(suggestion['To'])
+            from_sq = chess.parse_square(suggestion['From'].decode('utf-8'))
+            to_sq = chess.parse_square(suggestion['To'].decode('utf-8'))
             return chess.Move(from_sq, to_sq)
         suggestions = list(map(suggestion_to_move, results))
     prolog.retract(text)
-    #prolog.retractall('legal_move(_, _, _)')
     return match, suggestions
 
 def print_metrics(metrics: dict, log_level=logging.INFO, **kwargs) -> None:
@@ -79,7 +79,7 @@ def print_metrics(metrics: dict, log_level=logging.INFO, **kwargs) -> None:
     logger.log(log_level, f"DCG = {metrics['dcg']:.2f}")
     logger.log(log_level, f"Average = {metrics['avg']:.2f}")
 
-def calc_metrics(prolog, tactic_text: str, engine: chess.engine.SimpleEngine, pgn_file_handle: TextIO, game_limit: int=10, pos_limit: int=10) -> bool:
+def calc_metrics(prolog, tactic_text: str, engine: chess.engine.SimpleEngine, pgn_filename: PathLike, game_limit: int=10, pos_limit: int=10) -> bool:
     metrics = {
         'total_games': 0,  # total number of games
         'total_positions': 0, # total number of positions (across all games)
@@ -94,7 +94,7 @@ def calc_metrics(prolog, tactic_text: str, engine: chess.engine.SimpleEngine, pg
     avg_fn = lambda _, error: error
 
     with tqdm(total=game_limit * pos_limit, desc='Positions', unit='positions', leave=False) as pos_progress_bar:
-        for game in games(pgn_file_handle):
+        for game in games(pgn_filename):
             metrics['total_games'] += 1
             curr_positions = 0
             node = game.next() # skip start position
@@ -156,7 +156,6 @@ def main():
     tactics_limit = args.tactics_limit
     engine_path = args.engine_path # for calculating divergence
     position_db = args.position_db
-    position_handle = open(position_db) # TODO: pass file handle or filename as param?
     game_limit=args.num_games
     pos_limit = args.pos_per_game
     
@@ -178,13 +177,12 @@ def main():
                     
                     
 
-                    success = calc_metrics(prolog, tactic_text, engine, position_handle, game_limit=game_limit, pos_limit=pos_limit)
+                    success = calc_metrics(prolog, tactic_text, engine, position_db, game_limit=game_limit, pos_limit=pos_limit)
                     tactics_seen += 1
                     tactics_progress_bar.update(1)
                     if tactics_seen >= tactics_limit:
                         break
     logger.info(f'% Calculated metrics for {tactics_seen} tactics')
-    position_handle.close()
 
 if __name__ == '__main__':
     main()

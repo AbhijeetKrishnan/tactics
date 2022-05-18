@@ -8,13 +8,15 @@ from typing import Generator, List, Optional, Tuple
 import chess
 import chess.engine
 import chess.pgn
+import pyparsing
 from pyswip import Prolog
 from pyswip.prolog import PrologError
 from tqdm import tqdm
 
 from prolog_parser import create_parser, parse_result_to_str
 from util import (BK_FILE, LICHESS_2013, MAIA_1100, STOCKFISH, fen_to_contents,
-                  get_engine, get_evals, get_top_n_moves, positions_pgn, positions_list)
+                  get_engine, get_evals, get_top_n_moves, positions_list,
+                  positions_pgn)
 
 logger = logging.getLogger(__name__)
 logger.propagate = False # https://stackoverflow.com/a/2267567
@@ -136,7 +138,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Calculate metrics for a set of chess tactics')
     parser.add_argument('tactics_file', type=str, help='file containing list of tactics')
     parser.add_argument('--log', dest='log_level', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'], help='Set the logging level', default='INFO')
-    parser.add_argument('-n', '--num_tactics', dest='tactics_limit', type=int, help='Number of tactics to analyze', default=100)
+    parser.add_argument('-n', '--num_tactics', dest='tactics_limit', type=Optional[int], help='Number of tactics to analyze', default=None)
     parser.add_argument('-e', '--engine', dest='engine_path', default=STOCKFISH, help='Path to engine executable to use for calculating divergence')
     parser.add_argument('--pgn', dest='pgn_file', default=LICHESS_2013, help='Path to PGN file of positions to use for calculating divergence')
     parser.add_argument('--num-games', dest='num_games', type=int, default=10, help='Number of games to use')
@@ -177,7 +179,11 @@ def main():
                         continue
                     
                     # Get tactic
-                    tactic = prolog_parser.parse_string(line)
+                    try:
+                        tactic = prolog_parser.parse_string(line)
+                    except pyparsing.exceptions.ParseException:
+                        logger.error(f'Parsing error on {line}')
+                        continue
                     logger.debug(tactic)
                     tactic_text = parse_result_to_str(tactic)
                     logger.debug(tactic_text)
@@ -194,8 +200,9 @@ def main():
                         metrics_list.append(metrics)
                     tactics_seen += 1
                     tactics_progress_bar.update(1)
-                    if tactics_seen >= args.tactics_limit:
+                    if args.tactics_limit and tactics_seen >= args.tactics_limit:
                         break
+
     logger.info(f'% Calculated metrics for {tactics_seen} tactics')
     write_metrics(metrics_list, args.data_path)
 

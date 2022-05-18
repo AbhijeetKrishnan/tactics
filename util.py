@@ -157,11 +157,16 @@ def legal_move(_from, to, pos, handle):
     
     board = convert_pos_to_board(pos)
     legal_moves = list(board.legal_moves)
-    if 0 <= index < len(legal_moves):
-        move = legal_moves[index]
-        _from.unify(chess.square_name(move.from_square))
-        to.unify(chess.square_name(move.to_square))
-        return_value = pyswip.core.PL_retry(index)
+        
+    if isinstance(_from, pyswip.easy.Variable):
+        if 0 <= index < len(legal_moves):
+            move = legal_moves[index]
+            _from.unify(chess.square_name(move.from_square))
+            to.unify(chess.square_name(move.to_square))
+            return_value = pyswip.core.PL_retry(index)
+    elif isinstance(_from, pyswip.easy.Atom):
+        target = chess.Move(chess.parse_square(_from.value), chess.parse_square(to.value))
+        return_value = target in legal_moves
 
     return return_value
 

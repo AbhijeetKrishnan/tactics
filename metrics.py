@@ -1,4 +1,5 @@
 import argparse
+import csv
 import logging
 import math
 from collections.abc import Callable
@@ -78,7 +79,25 @@ def print_metrics(metrics: dict, log_level=logging.INFO, **kwargs) -> None:
     logger.log(log_level, f"DCG = {metrics['dcg']:.2f}")
     logger.log(log_level, f"Average = {metrics['avg']:.2f}")
 
-def calc_metrics(prolog, tactic_text: str, engine: chess.engine.SimpleEngine, pgn_file_handle: TextIO, game_limit: int=10, pos_limit: int=10) -> bool:
+def write_metrics(metrics_list: List[dict], csv_filename: str) -> None:
+    "Write metrics to csv file for analysis"
+    with open(csv_filename, 'w') as csv_file:
+        field_names = ['text', 'total_games', 'total_positions', 'total_matches', 'num_suggestions', 'dcg', 'avg']
+        writer = csv.DictWriter(csv_file, fieldnames=field_names)
+        writer.writeheader()
+        for metrics in metrics_list:
+            row = {
+                'text': metrics['tactic_text'],
+                'total_games': metrics['total_games'],
+                'total_positions': metrics['total_positions'],
+                'total_matches': metrics['total_matches'],
+                'num_suggestions': metrics['num_suggestions'],
+                'dcg': metrics['dcg'],
+                'avg': metrics['avg']
+            }
+            writer.writerow(row)
+
+def calc_metrics(prolog, tactic_text: str, engine: chess.engine.SimpleEngine, pgn_file_handle: TextIO, game_limit: int=10, pos_limit: int=10) -> Optional[dict]:
     metrics = {
         'total_games': 0,  # total number of games
         'total_positions': 0, # total number of positions (across all games)
@@ -101,7 +120,7 @@ def calc_metrics(prolog, tactic_text: str, engine: chess.engine.SimpleEngine, pg
                 board = node.board()
                 match, suggestions = get_tactic_match(prolog, tactic_text, board, limit=3)
                 if match is None:
-                    return False
+                    return None
                 metrics['total_positions'] += 1 # don't include a position for which we don't have a result
                 pos_progress_bar.update(1)
                 logger.debug(f'Suggestions: {suggestions}')
@@ -124,13 +143,12 @@ def calc_metrics(prolog, tactic_text: str, engine: chess.engine.SimpleEngine, pg
                 break
     
     if metrics['total_matches'] > 0:
-        print_metrics(metrics, log_level=logging.INFO, tactic_text=tactic_text)
+        return metrics
     else:
         print_metrics(metrics, log_level=logging.DEBUG, tactic_text=tactic_text)
-    return True
+        return None
 
-def main():
-    # Create argument parser
+def parse_args():
     parser = argparse.ArgumentParser(description='Calculate metrics for a set of chess tactics')
     parser.add_argument('tactics_file', type=str, help='file containing list of tactics')
     parser.add_argument('--log', dest='log_level', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'], help='Set the logging level', default='INFO')
@@ -139,16 +157,24 @@ def main():
     parser.add_argument('-p', '--position_db', dest='position_db', default=LICHESS_2013, help='Path to PGN file of positions to use for calculating divergence')
     parser.add_argument('--num-games', dest='num_games', type=int, default=10, help='Number of games to use')
     parser.add_argument('--pos-per-game', dest='pos_per_game', type=int, default=10, help='Number of positions to use per game')
-    args = parser.parse_args()
+    return parser.parse_args()
 
-    # Create logger
-    logging.basicConfig(level=getattr(logging, args.log_level))
+def create_logger(log_level):
+    logging.basicConfig(level=getattr(logging, log_level))
     logger = logging.getLogger(__name__)
     fmt = logging.Formatter('[%(levelname)s] [%(asctime)s] %(funcName)s:%(lineno)d - %(message)s')
     hdlr = logging.FileHandler('info.log', encoding='utf-8')
     hdlr.setFormatter(fmt)
     hdlr.setLevel(logging.DEBUG)
     logger.addHandler(hdlr)
+    return logger
+
+def main():
+    # Create argument parser
+    args = parse_args()
+
+    # Create logger
+    logger = create_logger(args.log_level)
 
     # Unpack cmdline arguments
     hspace_filename = args.tactics_file
@@ -163,6 +189,7 @@ def main():
     prolog_parser = create_parser()
     prolog = Prolog()
     prolog.consult(BK_FILE)
+    metrics_list = []
     with get_engine(engine_path) as engine:
         with open(hspace_filename) as hspace_handle:
             tactics_seen = 0
@@ -175,15 +202,16 @@ def main():
                     logger.debug(tactic)
                     tactic_text = parse_result_to_str(tactic)
                     logger.debug(tactic_text)
-                    
-                    
-
-                    success = calc_metrics(prolog, tactic_text, engine, position_handle, game_limit=game_limit, pos_limit=pos_limit)
+                    metrics = calc_metrics(prolog, tactic_text, engine, position_handle, game_limit=game_limit, pos_limit=pos_limit)
+                    if metrics:
+                        metrics['tactic_text'] = tactic_text
+                        metrics_list.append(metrics)
                     tactics_seen += 1
                     tactics_progress_bar.update(1)
                     if tactics_seen >= tactics_limit:
                         break
     logger.info(f'% Calculated metrics for {tactics_seen} tactics')
+    write_metrics(metrics_list, 'metrics_data.csv')
     position_handle.close()
 
 if __name__ == '__main__':

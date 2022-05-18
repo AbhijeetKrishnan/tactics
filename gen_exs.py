@@ -53,7 +53,7 @@ def gen_exs(exs_pgn_path: PathLike, engine_path: PathLike, num_games: int=10, po
             for _, move in moves[1:]:
                 yield {'fen': position.fen(), 'uci': move.uci(), 'label': 0}
 
-def main():
+def parse_args():
     parser = argparse.ArgumentParser(description='Generate tactic training examples and write them to a csv file')
     parser.add_argument('example_file', type=str, help='File to write generated examples to')
     parser.add_argument('-i', '--pgn', dest='pgn_file', type=str, default=LICHESS_2013, help='PGN file containing games')
@@ -61,12 +61,14 @@ def main():
     parser.add_argument('-n', '--num-games', dest='num_games', type=int, default=10, help='Number of games to use')
     parser.add_argument('-p', '--pos-per-game', dest='pos_per_game', type=int, default=10, help='Number of positions to use per game')
     parser.add_argument('-r', '--ratio', dest='neg_to_pos_ratio', type=int, default=3, help='Ratio of negative to positive examples to generate')
-    args = parser.parse_args()
+    return parser.parse_args()
+
+def main():
+    args = parse_args
 
     with open(args.example_file, 'w') as output:
         field_names = ['fen', 'uci', 'label']
         writer = csv.DictWriter(output, fieldnames=field_names)
-
         writer.writeheader()
         for ex in gen_exs(args.pgn_file, args.engine_path, args.num_games, args.pos_per_game, args.neg_to_pos_ratio):
             writer.writerow(ex)

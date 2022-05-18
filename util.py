@@ -1,11 +1,10 @@
 import os
 from contextlib import contextmanager
-from typing import Generator, List, Optional, TextIO, Tuple, Union
+from typing import Generator, List, Optional, Tuple, Union
 
 import chess
 import chess.engine
-from pyswip import Prolog
-from pyswip.prolog import PrologError
+import chess.pgn
 
 Seed = Optional[Union[int, float, str, bytes, bytearray]]
 PathLike = Union[str, List[str]]
@@ -42,10 +41,31 @@ def fen_to_contents(fen: str) -> str:
             piece_str_list.append(f'contents({color}, {piece_name}, {col}, {row})')
     return f'[{", ".join(piece_str_list)}]'
 
-def games(pgn_file_handle: TextIO) -> Generator[Optional[chess.pgn.Game], None, None]:
-    "Generator to yield list of games in a PGN file"
-    while game := chess.pgn.read_game(pgn_file_handle):
-        yield game
+def positions_pgn(pgn_file: PathLike, num_games: int=10, pos_per_game: int=10) -> Generator[chess.Board, None, None]:
+    "Generator to yield list of positions from games in a PGN file"
+    with open(pgn_file) as pgn_file_handle:
+        curr_games = 0
+        while game := chess.pgn.read_game(pgn_file_handle):
+            curr_positions = 0
+            node = game.next() # skip start position
+            while node and not node.is_end():
+                board = node.board()
+                yield board
+                curr_positions += 1
+                if pos_per_game and curr_positions >= pos_per_game:
+                    break
+                node = node.next()
+            curr_games += 1
+            if num_games and curr_games >= num_games:
+                break
+
+def positions_list(pos_list: PathLike) -> Generator[chess.Board, None, None]:
+    "Generator to yield positions listed in FEN notation in a file"
+    with open(pos_list) as pos_list_handle:
+        for line in pos_list_handle:
+            board = chess.Board()
+            board.set_board_fen(line)
+            yield board
 
 def get_evals(engine: chess.engine.SimpleEngine, board: chess.Board, suggestions: List[chess.Move]) -> List[Tuple[chess.engine.Score, chess.Move]]:
     "Obtain engine evaluations for a list of moves in a given position"

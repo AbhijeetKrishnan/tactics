@@ -17,7 +17,7 @@ def create_parser():
     predicate = pp.Word(pp.alphas + '_').set_results_name('id')
 
     number = pp.Word(pp.nums + '.').set_parse_action(lambda s, l, t: [int(t[0])])
-    variable = pp.Word(pp.alphas + '_')
+    variable = pp.Word(pp.alphas + pp.nums + '_')
 
     # an argument to a fact can be either a number or a variable
     simple_arg = number | variable

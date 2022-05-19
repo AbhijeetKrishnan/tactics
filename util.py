@@ -192,13 +192,6 @@ def legal_move(_from, to, pos, handle):
 def get_prolog() -> pyswip.prolog.Prolog:
     "Create the Prolog object and initialize it for the tactic-unification process"
 
-    pyswip.registerForeign(legal_move, arity=3, flags=pyswip.core.PL_FA_NONDETERMINISTIC)
     prolog = pyswip.Prolog()
     prolog.consult(BK_FILE)
     return prolog
-
-if __name__ == '__main__':
-    prolog = get_prolog()
-    contents = '[contents(white, rook, 1, 1), contents(white, knight, 2, 1), contents(white, bishop, 3, 1), contents(white, queen, 4, 1), contents(white, king, 5, 1), contents(white, bishop, 6, 1), contents(white, knight, 7, 1), contents(white, rook, 8, 1), contents(white, pawn, 1, 2), contents(white, pawn, 2, 2), contents(white, pawn, 3, 2), contents(white, pawn, 4, 2), contents(white, pawn, 6, 2), contents(white, pawn, 7, 2), contents(white, pawn, 8, 2), contents(white, pawn, 5, 4), contents(black, pawn, 5, 5), contents(black, pawn, 1, 7), contents(black, pawn, 2, 7), contents(black, pawn, 3, 7), contents(black, pawn, 4, 7), contents(black, pawn, 6, 7), contents(black, pawn, 7, 7), contents(black, pawn, 8, 7), contents(black, rook, 1, 8), contents(black, knight, 2, 8), contents(black, bishop, 3, 8), contents(black, queen, 4, 8), contents(black, king, 5, 8), contents(black, bishop, 6, 8), contents(black, knight, 7, 8), contents(black, rook, 8, 8), turn(white), kingside_castle(white), queenside_castle(white), kingside_castle(black), queenside_castle(black)]'
-    r = prolog.query(f'legal_move(From, To, {contents})', maxresult=5)
-    print(list(r))

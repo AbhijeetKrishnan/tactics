@@ -35,23 +35,25 @@ def evaluate(evaluated_suggestions: List[Tuple[chess.engine.Score, chess.Move]],
 
 def get_tactic_match(prolog: Prolog, text: str, board: chess.Board, limit: int=3, time_limit_sec: int=5) -> Tuple[Optional[bool], Optional[List[chess.Move]]]:
     "Given the text of a Prolog-based tactic, and a position, check whether the tactic matched in the given position or and if so, what were the suggested moves"
-    
+
     position = fen_to_contents(board.fen())
     
-    prolog.assertz(text)
-    # assert legal moves based on current position
-    # for move in board.legal_moves:
-    #     from_sq = chess.square_name(move.from_square)
-    #     to_sq = chess.square_name(move.to_square)
-    #     legal_move_pred = f'legal_move({from_sq}, {to_sq}, {position})'
-    #     logger.debug(f'Legal move predicate: {legal_move_pred}')
-    #     prolog.assertz(legal_move_pred)
-
-    query = f"f({position}, From, To)"
-    logger.debug(f'Launching query: {query} with time limit: {time_limit_sec}s')
     try:
+        prolog.assertz(text)
+        for legal_move in board.legal_moves:
+            legal_from_sq = chess.square_name(legal_move.from_square)
+            legal_to_sq = chess.square_name(legal_move.to_square)
+            legal_move_pred = f'legal_move({legal_from_sq}, {legal_to_sq}, {position})'
+            logger.debug(f'Asserting legal_move {legal_move_pred}')
+            prolog.assertz(legal_move_pred)
+
+        query = f"f({position}, From, To)"
+        logger.debug(f'Launching query: {query} with time limit: {time_limit_sec}s')
         results = list(prolog.query(f'{query}', maxresult=limit))
         logger.debug(f'Results: {results}')
+
+        prolog.retractall('legal_move(_, _, _)')
+        prolog.retract(text)
     except PrologError:
         logger.warning(f'timeout after {time_limit_sec}s on tactic {text}')
         return None, None
@@ -65,7 +67,7 @@ def get_tactic_match(prolog: Prolog, text: str, board: chess.Board, limit: int=3
             to_sq = chess.parse_square(suggestion['To'])
             return chess.Move(from_sq, to_sq)
         suggestions = list(map(suggestion_to_move, results))
-    prolog.retract(text)
+    
     return match, suggestions
 
 def print_metrics(metrics: dict, log_level=logging.INFO, **kwargs) -> None:
@@ -143,7 +145,7 @@ def parse_args():
     parser.add_argument('--pgn', dest='pgn_file', default=LICHESS_2013, help='Path to PGN file of positions to use for calculating divergence')
     parser.add_argument('--num-games', dest='num_games', type=int, default=10, help='Number of games to use')
     parser.add_argument('--pos-per-game', dest='pos_per_game', type=int, default=10, help='Number of positions to use per game')
-    parser.add_argument('--data-path', dest='data_path', type=str, default='metrics_data.csv', help='File path to which metrics should be written')
+    parser.add_argument('--data-path', dest='data_path', type=str, default='data/stats/metrics_data.csv', help='File path to which metrics should be written')
     parser.add_argument('--pos-list', dest='pos_list', type=str, help='Path to file contatining list of positions to use for calculating divergence')
     return parser.parse_args()
 

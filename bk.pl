@@ -153,7 +153,7 @@ queenside_castle(Side, Pos) :-
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-% :- dynamic legal_move/3.
+:- dynamic legal_move/3.
 
 attacks(From,To,Pos) :-
     to_coords(From, FromX, FromY),

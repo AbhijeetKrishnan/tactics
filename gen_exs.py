@@ -7,13 +7,14 @@ import chess
 import chess.engine
 import chess.pgn
 
-from util import LICHESS_2013, STOCKFISH, PathLike, Seed, get_engine, get_top_n_moves
+from util import LICHESS_2013, STOCKFISH, PathLike, get_engine, get_top_n_moves
 
 
-def sample_pgn(handle: TextIO, num_games: int=10, pos_per_game: int=10, seed: Seed=1) -> List[chess.Board]:
+def sample_pgn(handle: TextIO, num_games: int=10, pos_per_game: int=10) -> List[chess.Board]:
     "Sample positions from games in a PGN file"
-    random.seed(seed)
+    
     result = []
+    rand_state = random.getstate()
 
     # obtain num_game offsets from list of games
     offsets = []
@@ -23,6 +24,7 @@ def sample_pgn(handle: TextIO, num_games: int=10, pos_per_game: int=10, seed: Se
     sampled_offsets = random.sample(offsets, num_games)
 
     # obtain pos_per_game positions from sampled list of games
+    random.setstate(rand_state)
     for offset in sampled_offsets:
         handle.seek(offset)
         game = chess.pgn.read_game(handle)
@@ -38,7 +40,7 @@ def sample_pgn(handle: TextIO, num_games: int=10, pos_per_game: int=10, seed: Se
 
     return result
 
-def gen_exs(exs_pgn_path: PathLike, engine_path: PathLike, num_games: int=10, pos_per_game: int=10, neg_to_pos_ratio: int=3):
+def gen_exs(exs_pgn_path: PathLike, engine_path: PathLike, num_games: int=10, pos_per_game: int=10, neg_to_pos_ratio: int=0):
     
     with open(exs_pgn_path) as handle:
         sample_positions = sample_pgn(handle, num_games=num_games, pos_per_game=pos_per_game)
@@ -61,10 +63,12 @@ def parse_args():
     parser.add_argument('-n', '--num-games', dest='num_games', type=int, default=10, help='Number of games to use')
     parser.add_argument('-p', '--pos-per-game', dest='pos_per_game', type=int, default=10, help='Number of positions to use per game')
     parser.add_argument('-r', '--ratio', dest='neg_to_pos_ratio', type=int, default=3, help='Ratio of negative to positive examples to generate')
+    parser.add_argument('--seed', dest='seed', type=int, default=1, help='Seed to use for random generation')
     return parser.parse_args()
 
 def main():
     args = parse_args()
+    random.seed(args.seed)
 
     with open(args.example_file, 'w') as output:
         field_names = ['fen', 'uci', 'label']

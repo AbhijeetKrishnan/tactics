@@ -8,7 +8,6 @@ import chess.engine
 import chess.pgn
 import pyswip
 
-Seed = Optional[Union[int, float, str, bytes, bytearray]]
 PathLike = Union[str, List[str]]
 
 BK_FILE = os.path.join('bk.pl')

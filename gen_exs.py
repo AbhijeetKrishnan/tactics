@@ -64,7 +64,7 @@ def parse_args():
     return parser.parse_args()
 
 def main():
-    args = parse_args
+    args = parse_args()
 
     with open(args.example_file, 'w') as output:
         field_names = ['fen', 'uci', 'label']

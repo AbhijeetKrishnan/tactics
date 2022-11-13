@@ -1,3 +1,5 @@
+This repository has now been archived. Please go to [AbhijeetKrishnan/interpretable-chess-tactics](https://github.com/AbhijeetKrishnan/interpretable-chess-tactics) to see the latest version of this research.
+
 # Interpretable Chess Tactics
 
 1. Download Lichess games database for [2013 -
